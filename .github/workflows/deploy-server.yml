@@ -1,0 +1,24 @@
+name: Deploy to server
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  docker-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script: |
+            cd ${{ secrets.APP_DIR || '/opt/shengge-ai-paper' }}
+            git pull --ff-only
+            bash deploy.sh 80

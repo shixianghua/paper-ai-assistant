@@ -1,0 +1,8 @@
+services:
+  web:
+    build: .
+    image: shengge-ai-paper:latest
+    container_name: shengge-ai-paper
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-80}:80"
