@@ -1,10 +1,11 @@
 import { callDeepSeek } from "./deepseek"
 import { figFlow } from "./charts"
+import { fetchRealRefs } from "./reflib"
 
 let seq = 0
 const nid = (p) => `${p}-${Date.now().toString(36)}-${seq++}`
 
-const PROF = `你是一位资深高校学术论文指导教授，精通中文学位论文规范（GB/T 7714、章-节结构、学术语体）。你输出真实、具体、可核查的内容，杜绝空洞套话与重复句式，不使用“具有重要意义”等空泛表述。`
+const PROF = `你是一位资深高校学术论文指导教授，精通中文学位论文规范（GB/T 7714、章-节结构、学术语体）。你输出真实、具体、可核查的内容：严禁编造任何统计数字、样本数据或事实；没有真实数据支撑时，在相应位置输出“［待填入真实数据：……］”并说明应采集的指标与来源；杜绝空洞套话与重复句式；全文图注、表注与文字一律使用中文。`
 
 function stripJson(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/)
@@ -119,33 +120,47 @@ export async function realFullDoc(
   onLog?.({ text: "摘要与关键词生成完成", kind: "done" })
   onProgress?.(12)
 
-  onLog?.({ text: "正在整理参考文献（AI 生成，提交前请在文献库核验）…", kind: "run" })
+  onLog?.({ text: "正在通过 Crossref/DOI 检索真实文献…", kind: "run" })
+  let realRefs = []
   try {
-    const refData = stripJson(
-      await callDeepSeek({
-        system: `${PROF}\n只输出 JSON：{"references":[{"text":"GB/T 7714 条目"}]}。仅输出你确信可检索到的经典或代表性文献；无法确认时宁缺毋滥，最多 ${refCount} 条；不要编造。`,
-        user: `论文题目：${topic}；主题：${chapters.map((c) => c.title).join("；")}`,
-        maxTokens: 2400,
-        temperature: 0.2,
-      }),
-    )
-    doc.refs = (refData.references || []).map((r) => r.text).filter(Boolean).slice(0, Number(refCount) || 12)
+    realRefs = await fetchRealRefs(topic, refCount)
   } catch {
-    doc.refs = []
+    realRefs = []
   }
-  doc.refsNote =
-    doc.refs.length
-      ? "以下参考文献由 DeepSeek 根据领域知识生成，提交前请通过知网/万方/Web of Science 等数据库逐条核验并补充页码。"
-      : "模型未给出可确认的文献条目，请自行通过文献数据库补充（不编造文献）。"
-  onLog?.({ text: `参考文献整理完成（${doc.refs.length} 条，待核验）`, kind: "done" })
+  if (realRefs.length) {
+    doc.refs = realRefs.map((r) => r.text)
+    doc.refsNote =
+      "以下文献来自 Crossref 实时检索（含 DOI，可在线核验）。如需知网可检索文献，请将知网导出的 GB/T 7714 条目粘贴进“投喂/资料”区，系统将原样采用。"
+  } else {
+    try {
+      const refData = stripJson(
+        await callDeepSeek({
+          system: `${PROF}\n只输出 JSON：{"references":[{"text":"GB/T 7714 条目"}]}。仅输出你确信可检索到的经典或代表性文献；无法确认时宁缺毋滥，最多 ${refCount} 条；不要编造。`,
+          user: `论文题目：${topic}；主题：${chapters.map((c) => c.title).join("；")}`,
+          maxTokens: 2400,
+          temperature: 0.2,
+        }),
+      )
+      doc.refs = (refData.references || []).map((r) => r.text).filter(Boolean).slice(0, Number(refCount) || 12)
+    } catch {
+      doc.refs = []
+    }
+    doc.refsNote = "实时检索暂不可用，以下为模型建议条目，提交前请务必逐条核验。"
+  }
+  onLog?.({ text: `参考文献整理完成（${doc.refs.length} 条，${realRefs.length ? "Crossref 实时检索" : "模型建议需核验"}）`, kind: "done" })
   onProgress?.(18)
 
+  const totalChars = typeof words === "string" && words.includes("万")
+    ? Number.parseFloat(words) * 10000
+    : Number(words) || 8000
+  let remainingChars = Math.max(2000, totalChars - (doc.abstract || "").replace(/\s/g, "").length)
   const base = 74 / chapters.length
   let acc = 20
   let ci = 0
   for (const chapter of chapters) {
     ci += 1
     const kids = outline.filter((n) => n.level === 2 && n.parent === chapter.id)
+    const allocated = Math.max(400, Math.floor(remainingChars / (chapters.length - ci + 1)))
     onLog?.({ text: `DeepSeek 正在撰写 ${ci}/${chapters.length} · ${chapter.title}`, kind: "run" })
     onProgress?.(acc)
     let md = ""
@@ -153,9 +168,9 @@ export async function realFullDoc(
     for (let attempt = 1; attempt <= 2 && !md; attempt += 1) {
       try {
         md = await callDeepSeek({
-          system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”；每节给出真实、具体的论述（可包含数据、表格、机制、案例）；表格用 Markdown；每节至少300字；引用标注 [n]；禁止空话与重复句式。只输出 Markdown 正文。`,
-          user: `论文题目：${topic}（${typeLabel}，目标 ${words} 字）\n当前章节：${chapter.title}\n本节清单：${kids.map((k) => k.title).join("、")}\n请撰写本章。`,
-          maxTokens: 7000,
+          system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”；表格用 Markdown 且必须给出真实数据出处或标注占位；引用标注 [n]；图注表注使用中文；禁止空话与重复句式。只输出 Markdown 正文。`,
+          user: `论文题目：${topic}（${typeLabel}，全文目标 ${totalChars} 字）\n当前章节：${chapter.title}（第 ${ci}/${chapters.length} 章）\n本节清单：${kids.map((k) => k.title).join("、")}\n本章目标字数：约 ${allocated} 字（全文剩余 ${remainingChars} 字），请严格控制篇幅，宁短勿滥。\n请撰写本章。`,
+          maxTokens: Math.min(16384, allocated * 2 + 3000),
           temperature: 0.6,
         })
       } catch (e) {
@@ -169,6 +184,10 @@ export async function realFullDoc(
     const blocks = md
       ? parseBlocks(md)
       : [{ kind: "p", text: `本章（${chapter.title}）自动生成暂时失败：${lastErr}。请使用右侧“无限改稿”单独重试，或稍后重新生成。` }]
+    if (md) {
+      const used = md.replace(/\s/g, "").length
+      remainingChars = Math.max(0, remainingChars - used)
+    }
     injectFlow(blocks, kids)
     doc.sections.push({ id: chapter.id, title: chapter.title, level: 1, blocks })
     doc.toc.push({ id: chapter.id, title: chapter.title })
