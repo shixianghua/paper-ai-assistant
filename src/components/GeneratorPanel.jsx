@@ -18,7 +18,8 @@ import {
   REF_OPTIONS,
   WORD_OPTIONS,
 } from "../data/catalog"
-import { defaultTopic, demoOutline } from "../lib/generator"
+import { defaultTopic } from "../lib/generator"
+import { smartOutline } from "../lib/engine"
 import { notify, saveSessionOutline } from "../lib/store"
 
 const initial = {
@@ -72,7 +73,7 @@ export default function GeneratorPanel({ heading = "在线体验 · 从题目到
     setLogs([])
     setOutline(null)
     try {
-      const result = await demoOutline(
+      const result = await smartOutline(
         {
           typeKey: form.typeKey,
           topic: form.topic.trim(),

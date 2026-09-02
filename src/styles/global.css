@@ -2276,6 +2276,14 @@ ol {
   line-height: 1.6;
 }
 
+.paper h4 {
+  font-family: var(--font-serif);
+  color: #111;
+  font-size: 16.5px;
+  margin: 26px 0 12px;
+  font-weight: 700;
+}
+
 .paper p {
   font-family: var(--font-serif);
   color: #242424;
@@ -2284,6 +2292,93 @@ ol {
   margin: 0 0 13px;
   text-align: justify;
   white-space: pre-wrap;
+}
+
+.paper-toc {
+  margin: 26px 0 8px;
+  border-top: 1px solid #e9ebf2;
+  padding-top: 14px;
+}
+
+.toc-row {
+  font-family: var(--font-serif);
+  color: #333;
+  font-size: 14.5px;
+  line-height: 2.1;
+  border-bottom: 1px dotted #e4e6ef;
+}
+
+.paper-table {
+  margin: 18px 0;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.table-title {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #222;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.paper-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.paper-table th,
+.paper-table td {
+  border: 1px solid #444;
+  padding: 6px 8px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.paper-table th {
+  background: #f4f5fa;
+  font-weight: 800;
+}
+
+.paper-figure {
+  margin: 20px 0 24px;
+  text-align: center;
+}
+
+.figure-title {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #222;
+  margin-bottom: 10px;
+}
+
+.figure-svg {
+  background: #fbfcff;
+  border: 1px solid #e9ebf4;
+  border-radius: 10px;
+  padding: 12px 8px;
+  overflow-x: auto;
+}
+
+.figure-svg svg {
+  width: 100%;
+  height: auto;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.demo-note {
+  margin-top: 7px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: #8a6d1a;
+  background: #fdf6e2;
+  border-radius: 8px;
+  padding: 6px 10px;
 }
 
 .paper .abstract {

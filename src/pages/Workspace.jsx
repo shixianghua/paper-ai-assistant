@@ -6,6 +6,7 @@ import {
   ChevronRight,
   FileDown,
   FileText,
+  FolderArchive,
   LayoutTemplate,
   Loader2,
   LogIn,
@@ -18,6 +19,7 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react"
+import JSZip from "jszip"
 import {
   DOC_TYPES,
   EDU_LEVELS,
@@ -26,7 +28,9 @@ import {
   REF_OPTIONS,
   WORD_OPTIONS,
 } from "../data/catalog"
-import { demoOutline, docWordCount, generateFullDoc, uid } from "../lib/generator"
+import { docWordCount, uid } from "../lib/generator"
+import { smartFullDoc, smartOutline } from "../lib/engine"
+import { getDsKey, getDsModel, saveDsConfig } from "../lib/deepseek"
 import {
   addRecord,
   clearSession,
@@ -72,48 +76,261 @@ function applyRewrite(paras, passes = 2) {
 }
 
 function docFullText(doc) {
+  const secText = (s) =>
+    [s.title, ...(s.blocks || []).filter((b) => b.text).map((b) => b.text)].join("\n")
   return [
     doc.title,
     doc.metaLine,
     "",
     "摘要",
     doc.abstract,
-    ...doc.sections.flatMap((s) => [s.title, ...s.paras]),
+    `关键词：${(doc.keywords || []).join("；")}`,
+    ...doc.sections.map(secText),
     "参考文献",
     ...doc.refs.map((r, i) => `[${i + 1}] ${r}`),
     doc.ack,
   ].join("\n")
 }
 
-function exportWord(doc) {
+async function svgToPng(svgEl) {
+  try {
+    const xml = new XMLSerializer().serializeToString(svgEl)
+    const svg64 = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`
+    const img = new Image()
+    await new Promise((res, rej) => {
+      img.onload = res
+      img.onerror = rej
+      img.src = svg64
+    })
+    const canvas = document.createElement("canvas")
+    const scale = 2
+    canvas.width = svgEl.viewBox?.baseVal?.width * scale || 1240
+    canvas.height = svgEl.viewBox?.baseVal?.height * scale || 600
+    const ctx = canvas.getContext("2d")
+    ctx.fillStyle = "#ffffff"
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL("image/png")
+  } catch {
+    return null
+  }
+}
+
+function svgDataImage(svg) {
+  const xml = new XMLSerializer().serializeToString(svg)
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`
+}
+
+async function replaceAsync(str, re, fn) {
+  const matches = []
+  str.replace(re, (...args) => {
+    matches.push(args)
+    return args[0]
+  })
+  const replaced = await Promise.all(matches.map((m) => fn(m[0], m[1])))
+  return str.replace(re, () => replaced.shift())
+}
+
+async function buildPaperHtml(doc) {
+  let chartNo = 0
+  const renderBlocks = (blocks) =>
+    (blocks || [])
+      .map((b) => {
+        if (b.kind === "h4") return `<h3>${b.text}</h3>`
+        if (b.kind === "p") return `<p>${b.text}</p>`
+        if (b.kind === "figure" && b.figure) {
+          const no = chartNo
+          chartNo += 1
+          return `<p class="tbl-title">图：${b.figure.title}</p><img class="chart" src="__CHART__${no}__" alt="${b.figure.title}"/>`
+        }
+        if (b.kind === "table" && b.table) {
+          const t = b.table
+          return `<p class="tbl-title">表：${t.title}</p><table border="1" cellspacing="0" cellpadding="5"><thead><tr>${t.headers
+            .map((h) => `<th>${h}</th>`)
+            .join("")}</tr></thead><tbody>${t.rows
+            .map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`)
+            .join("")}</tbody></table>`
+        }
+        return ""
+      })
+      .join("")
+
   const body = `
-    <h1>${doc.title}</h1>
-    <p class="meta">${doc.metaLine}</p>
-    <h2>摘要</h2><p>${doc.abstract}</p>
+    <div class="cover">
+      <p class="cover-school">本科毕业论文（设计）</p>
+      <h1 class="cover-title">${doc.title}</h1>
+      <p class="cover-meta">${doc.metaLine.replace("· 演示版按规范结构输出精简篇幅", "")}</p>
+    </div>
+    <div style="page-break-before:always"></div>
+    <h2 class="decl">原创性声明</h2>
+    <p class="decl-text">本人郑重声明：所呈交的论文是本人在指导教师指导下独立完成的研究成果。除文中已经注明引用的内容外，本论文不包含任何其他个人或集体已经发表或撰写过的研究成果。演示版由系统自动生成，仅供格式与功能演示。</p>
+    <h2>摘 要</h2>
+    <p>${doc.abstract}</p>
+    <p class="kw">关键词：${(doc.keywords || []).join("；")}</p>
+    <h2>目 录</h2>
+    ${doc.sections.map((s) => `<p class="toc">${s.title}</p>`).join("")}
+    <div style="page-break-before:always"></div>
     ${doc.sections
       .map(
-        (s, i) =>
-          `<h2>${i + 1}. ${s.title}</h2>` +
-          s.paras.map((p) => `<p>${p}</p>`).join(""),
+        (s) =>
+          `<h2 class="chapter">${s.title}</h2>` +
+          renderBlocks(s.blocks) +
+          `<div style="page-break-before:always"></div>`,
       )
       .join("")}
-    <h2>参考文献</h2><ol>${doc.refs.map((r) => `<li>${r}</li>`).join("")}</ol>
-    <p class="meta">${doc.refsNote}</p>
-    <h2>致谢</h2><p>${doc.ack}</p>`
+    <h2>参考文献</h2>
+    <ol class="refs">${doc.refs.map((r) => `<li>${r}</li>`).join("")}</ol>
+    <p class="note">${doc.refsNote}</p>
+    <h2>致 谢</h2><p>${doc.ack}</p>`
   const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>
-    body{font-family:"SimSun","Songti SC",serif;line-height:2;color:#111;font-size:16px}
-    h1{text-align:center;font-size:24px} h2{font-size:19px;margin-top:22px}
-    .meta{color:#555;text-align:center} p{text-align:justify;text-indent:2em;margin:0}
-    .meta{text-indent:0}
+    body{font-family:"Times New Roman","SimSun",serif;line-height:1.9;color:#111;font-size:14px}
+    h1{text-align:center;font-size:22px} h2{font-size:18px;margin:18px 0 10px}
+    h3{font-size:15px;margin:14px 0 6px} h4{font-size:14px;margin:12px 0 4px}
+    p{text-align:justify;text-indent:2em;margin:0 0 6px}
+    .cover{text-align:center;padding-top:80px}
+    .cover-school{font-size:22px;letter-spacing:4px}
+    .cover-title{font-size:26px;margin-top:60px;text-indent:0}
+    .cover-meta,.tbl-title,.note,.kw,.toc,.decl{text-indent:0}
+    .kw{font-weight:bold} .note{color:#666;font-size:12px}
+    .decl-text{text-indent:2em}
+    table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:13px}
+    th,td{border:1px solid #333;padding:4px 8px;text-align:center}
+    .chart{width:100%;max-width:560px;height:auto;margin:6px 0 12px}
+    .chapter{page-break-before:always}
     @page{size:A4;margin:2.54cm 3.17cm}
   </style></head><body>${body}</body></html>`
+
+  const svgs = [...document.querySelectorAll(".paper figure svg")]
+  const finalHtml = await replaceAsync(html, /__CHART__(\d+)__/g, async (m, no) => {
+    const svg = svgs[Number(no)]
+    if (!svg) return ""
+    const png = await svgToPng(svg)
+    return `<img class="chart" src="${png || svgDataImage(svg)}" alt="图表"/>`
+  })
+  return finalHtml
+}
+
+async function exportWord(doc) {
+  const html = await buildPaperHtml(doc)
   const blob = new Blob(["\ufeff", html], { type: "application/msword" })
+  downloadBlob(blob, `${doc.title.replace(/[\\/:*?"<>|]/g, "_")}.doc`)
+}
+
+function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = `${doc.title.replace(/[\\/:*?"<>|]/g, "_")}.doc`
+  a.download = filename
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 4000)
+}
+
+function auxHtml(body) {
+  return `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>
+    body{font-family:"Times New Roman","SimSun",serif;font-size:13px;line-height:1.9;color:#111}
+    h1{text-align:center;font-size:20px;letter-spacing:2px}
+    h2{font-size:16px;margin:16px 0 8px;border-bottom:1px solid #999;padding-bottom:3px}
+    p{text-align:justify;text-indent:2em;margin:0 0 5px}
+    table{width:100%;border-collapse:collapse;margin:6px 0 10px;font-size:12.5px}
+    th,td{border:1px solid #333;padding:5px 8px;vertical-align:top}
+    th{background:#f2f3f7;font-weight:bold;white-space:nowrap}
+    .fill{color:#666}
+    @page{size:A4;margin:2.2cm 2.4cm}
+  </style></head><body>${body}</body></html>`
+}
+
+function auxHeader(rows) {
+  return `<table><tbody>${rows
+    .map((r) => `<tr><th style="width:96px">${r[0]}</th><td>${r[1]}</td><th style="width:96px">${r[2] || ""}</th><td>${r[3] || ""}</td></tr>`)
+    .join("")}</tbody></table>`
+}
+
+function buildAuxDocs(doc, meta) {
+  const typeText = (meta && DOC_TYPES.find((t) => t.key === meta.typeKey)?.label) || "毕业论文"
+  const edu = meta?.edu || "本科"
+  const words = meta?.words || "8000"
+  const base = [
+    ["课题名称", doc.title],
+    ["成果类型", `${typeText}（${edu}）`],
+    ["目标字数", `${words} 字`],
+    ["学生 / 学号", '<span class="fill">（填写）</span>'],
+    ["专业 / 班级", '<span class="fill">（填写）</span>'],
+    ["指导教师", '<span class="fill">（填写）</span>'],
+    ["完成日期", '<span class="fill">（填写）</span>'],
+  ]
+
+  const proposal = auxHtml(`
+    <h1>开 题 报 告</h1>
+    ${auxHeader(base)}
+    <h2>一、选题背景与研究意义</h2>
+    <p>${doc.abstract}</p>
+    <h2>二、国内外研究现状</h2>
+    <p>通过对国内外文献的梳理可以发现，围绕“${doc.title}”的研究已积累了一定成果，为本课题提供了概念工具与方法借鉴；但已有研究在研究对象代表性、机制解释与可操作化方面仍有拓展空间，本课题即在上述基础上展开。</p>
+    <h2>三、研究目标与研究内容</h2>
+    <p>总体目标：按照学术规范完成“${doc.title}”的选题论证、方案设计与成果产出。具体内容包括：（1）明确核心概念与分析框架；（2）开展资料收集与现状分析；（3）完成实证或工程验证；（4）形成结论并撰写论文。</p>
+    <h2>四、研究方法与技术路线</h2>
+    <p>拟综合运用文献研究法、问卷调查法、准实验研究法（或系统设计、测试验证方法），按“问题界定—框架建构—方案实施—结果分析—总结建议”的路线推进，确保过程可记录、结果可检验。</p>
+    <h2>五、进度安排</h2>
+    <table><tr><th style="width:110px">阶段</th><th>主要任务</th><th style="width:110px">时间</th></tr>
+      <tr><td>准备阶段</td><td>文献检索、开题论证、方案确定</td><td>第 1-2 周</td></tr>
+      <tr><td>实施阶段</td><td>资料收集、方案实施、过程记录</td><td>第 3-6 周</td></tr>
+      <tr><td>写作阶段</td><td>数据分析、论文撰写与修改</td><td>第 7-10 周</td></tr>
+      <tr><td>答辩阶段</td><td>定稿、答辩准备</td><td>第 11-12 周</td></tr></table>
+    <h2>六、预期成果</h2>
+    <p>形成结构完整的论文（含开题报告、任务书、中期检查表等过程材料），产出规范的数据与测试记录，提出经检验的结论与建议。</p>
+    <h2>七、指导教师意见</h2>
+    <p class="fill">（由指导教师填写并签字）</p>`)
+
+  const task = auxHtml(`
+    <h1>毕 业 设 计（论 文）任 务 书</h1>
+    ${auxHeader(base)}
+    <h2>一、任务来源及背景</h2>
+    <p>本课题来源于${edu}${typeText}培养环节的选题要求，结合“${doc.title}”的研究现状与实践需要拟定，具有一定的理论价值与应用背景。</p>
+    <h2>二、主要任务与要求</h2>
+    <p>1. 完成选题论证与开题报告，明确研究边界；<br/>2. 按大纲完成论文各章写作，做到结构规范、论证充分、图文表格并茂；<br/>3. 规范引用并整理参考文献（GB/T 7714）；<br/>4. 按期提交论文、开题报告、任务书、中期检查表等全套材料并参加答辩。</p>
+    <h2>三、论文主要内容</h2>
+    <p>${doc.toc.map((t) => t.title).join("；")}。正文应包含摘要、关键词、目录、图表、参考文献与致谢。</p>
+    <h2>四、进度安排</h2>
+    <table><tr><th style="width:110px">阶段</th><th>任务</th><th style="width:110px">时间</th></tr>
+      <tr><td>开题</td><td>提交开题报告</td><td>第 2 周</td></tr>
+      <tr><td>中期</td><td>完成初稿大半，提交中期检查表</td><td>第 6 周</td></tr>
+      <tr><td>定稿</td><td>完成全文与查改</td><td>第 10 周</td></tr>
+      <tr><td>答辩</td><td>提交全套材料并答辩</td><td>第 12 周</td></tr></table>
+    <h2>五、成果要求</h2>
+    <p>提交任务书、开题报告、中期检查表、论文正文及配套图表资料，内容真实规范，符合学校写作与格式要求。</p>
+    <h2>六、审核意见</h2>
+    <p class="fill">（由教研室/指导教师填写）</p>`)
+
+  const mid = auxHtml(`
+    <h1>毕 业 设 计（论 文）中 期 检 查 表</h1>
+    ${auxHeader(base)}
+    <h2>一、计划进度执行情况</h2>
+    <p>本课题按照任务书进度推进：已完成选题论证、资料收集与论文初稿的主体写作，计划完成率约 80%；论文结构完整，摘要、关键词、目录、正文与参考文献均已按规范生成，正在开展修改完善。</p>
+    <h2>二、阶段成果</h2>
+    <p>已形成论文初稿（目标 ${words} 字）及配套图表；完成开题报告、任务书等过程材料；按要求进行文献引用与格式校对。</p>
+    <h2>三、存在问题及拟采取措施</h2>
+    <p>存在的主要问题为部分论证的数据支撑仍需加强、格式细节有待统一。拟通过补充分析材料、参照学校模板逐项校对等方式解决，并请指导教师进一步把关。</p>
+    <h2>四、下一阶段工作计划</h2>
+    <p>完成全文统稿与降重修改，规范图表与参考文献，提交指导教师审阅后定稿，准备答辩材料。</p>
+    <h2>五、指导教师意见</h2>
+    <p class="fill">（由指导教师填写并签字）</p>`)
+
+  return [
+    { name: "开题报告", html: proposal },
+    { name: "任务书", html: task },
+    { name: "中期检查表", html: mid },
+  ]
+}
+
+async function exportPackage(doc, meta) {
+  const zip = new JSZip()
+  const docs = buildAuxDocs(doc, meta)
+  const paperHtml = await buildPaperHtml(doc)
+  zip.file("1-论文（全文）.doc", `\ufeff${paperHtml}`)
+  docs.forEach((d, i) => zip.file(`${i + 2}-${d.name}.doc`, `\ufeff${d.html}`))
+  zip.file("材料清单.txt", "本压缩包包含：论文（全文）、开题报告、任务书、中期检查表。请按学校要求填写个人信息与签名后提交。")
+  const blob = await zip.generateAsync({ type: "blob" })
+  downloadBlob(blob, `升格智能论文系统-全套材料-${doc.title.slice(0, 12)}.zip`)
 }
 
 export default function Workspace() {
@@ -133,6 +350,9 @@ export default function Workspace() {
   const [toolKey, setToolKey] = useState(null)
   const [toolDone, setToolDone] = useState({})
   const [login, setLogin] = useState(false)
+  const [showDs, setShowDs] = useState(false)
+  const [dsKey, setDsKey] = useState(getDsKey())
+  const [dsModel, setDsModel] = useState(getDsModel())
   const timers = useRef([])
   const cancelRef = useRef(null)
 
@@ -155,7 +375,7 @@ export default function Workspace() {
     setLogs([])
     setDoc(null)
     try {
-      const result = await demoOutline(
+      const result = await smartOutline(
         { ...form, topic: form.topic.trim(), feed: "" },
         {
           onLog: ({ text, kind }) =>
@@ -185,7 +405,7 @@ export default function Workspace() {
     setLogs([])
     setDoc(null)
     try {
-      const finalDoc = await generateFullDoc(
+      const finalDoc = await smartFullDoc(
         { outline, topic: meta.topic, typeKey: meta.typeKey, edu: meta.edu, lang: meta.lang, words: meta.words, refCount: meta.refCount },
         {
           onLog: ({ text, kind }) =>
@@ -241,9 +461,16 @@ export default function Workspace() {
 
   const runTool = (key) => {
     if (!doc || docBusy) return
+    if (key === "package") {
+      exportPackage(doc, meta)
+        .then(() => notify("全套材料已打包：论文、开题报告、任务书、中期检查表", "ok", 5200))
+        .catch(() => notify("打包失败，请重试", "err"))
+      return
+    }
     if (key === "export") {
       exportWord(doc)
-      notify("Word 文档已开始下载", "ok")
+        .then(() => notify("Word 文档已开始下载（含图表）", "ok"))
+        .catch(() => notify("导出失败，请重试", "err"))
       return
     }
     if (key === "ppt") {
@@ -306,6 +533,7 @@ export default function Workspace() {
     { key: "reduce", label: "一键降重", desc: "同义改写与结构微调", icon: ScanSearch },
     { key: "layout", label: "智能排版", desc: "A4 学术模板 · GB/T 7714", icon: LayoutTemplate },
     { key: "ppt", label: "生成答辩 PPT", desc: "演示版暂未开放", icon: MonitorPlay },
+    { key: "package", label: "全套材料打包", desc: "论文+开题+任务书+中期检查表", icon: FolderArchive },
     { key: "export", label: "导出 Word", desc: "原生 .doc 文件下载", icon: FileDown },
   ]
 
@@ -330,6 +558,14 @@ export default function Workspace() {
             )}
             <button className="btn btn-outline btn-sm" onClick={resetAll}>
               <Plus size={15} /> 新建
+            </button>
+            <button
+              className={`btn btn-sm ${dsKey ? "btn-soft" : "btn-outline"}`}
+              onClick={() => setShowDs(true)}
+              title="配置 DeepSeek API（Key 仅保存在本浏览器，不提交到仓库）"
+            >
+              <span className="dot" style={{ background: dsKey ? "var(--green-500)" : "var(--amber-400)" }} />
+              {dsKey ? `DeepSeek ${dsModel.replace("deepseek-", "")} · 已接入` : "接入 DeepSeek"}
             </button>
             {user ? (
               <span className="user-chip">
@@ -555,19 +791,63 @@ export default function Workspace() {
                   <div className="abstract">
                     <b>摘要</b>
                     <p>{doc.abstract}</p>
-                    <p style={{ marginTop: 10, color: "#666", fontSize: 13 }}>
-                      <b style={{ fontFamily: "var(--font-sans)" }}>关键词：</b>
-                      {doc.title.slice(0, 4)}；研究现状；对策建议；文献综述
+                    <p style={{ marginTop: 10, color: "#666", fontSize: 13, fontWeight: 700 }}>
+                      关键词：{(doc.keywords || []).join("；")}
                     </p>
                   </div>
-                  {doc.sections.map((s, i) => (
+                  <div className="paper-toc">
+                    <h3>目录</h3>
+                    {doc.toc.map((t) => (
+                      <div className="toc-row" key={t.id}>
+                        {t.title}
+                      </div>
+                    ))}
+                  </div>
+                  {doc.sections.map((s) => (
                     <section key={s.id}>
-                      <h3>
-                        {i + 1}. {s.title}
-                      </h3>
-                      {s.paras.map((p, pi) => (
-                        <p key={`${s.id}-${pi}`}>{p}</p>
-                      ))}
+                      <h3>{s.title}</h3>
+                      {(s.blocks || []).map((b, bi) => {
+                        if (b.kind === "h4") return <h4 key={bi}>{b.text}</h4>
+                        if (b.kind === "p") return <p key={bi}>{b.text}</p>
+                        if (b.kind === "figure" && b.figure) {
+                          return (
+                            <figure className="paper-figure" key={bi}>
+                              <div className="figure-title">{b.figure.title}</div>
+                              <div
+                                className="figure-svg"
+                                dangerouslySetInnerHTML={{ __html: b.figure.svg }}
+                              />
+                            </figure>
+                          )
+                        }
+                        if (b.kind === "table" && b.table) {
+                          return (
+                            <div className="paper-table" key={bi}>
+                              <div className="table-title">{b.table.title}</div>
+                              <table>
+                                <thead>
+                                  <tr>
+                                    {b.table.headers.map((h) => (
+                                      <th key={h}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {b.table.rows.map((row, ri) => (
+                                    <tr key={ri}>
+                                      {row.map((cell, ci) => (
+                                        <td key={ci}>{cell}</td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              {b.demo && <div className="demo-note">示例数据，正式版以真实调研/测试结果回填</div>}
+                            </div>
+                          )
+                        }
+                        return null
+                      })}
                     </section>
                   ))}
                   <h3>参考文献</h3>
@@ -684,6 +964,59 @@ export default function Workspace() {
         </div>
       </div>
       {login && <LoginModal mode="login" onClose={() => setLogin(false)} />}
+      {showDs && (
+        <div className="overlay" role="dialog" aria-modal="true" onClick={() => setShowDs(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h3>DeepSeek 接入设置</h3>
+              <button className="modal-close" onClick={() => setShowDs(false)} aria-label="关闭">
+                ×
+              </button>
+            </div>
+            <p className="modal-sub">开启后大纲与全文由 DeepSeek V4 Flash 真实生成；Key 仅保存在本浏览器 localStorage，不会写入仓库或发送给第三方。</p>
+            <div className="form-stack">
+              <div className="field">
+                <label htmlFor="ds-key">API Key</label>
+                <input
+                  id="ds-key"
+                  className="input"
+                  type="password"
+                  value={dsKey}
+                  onChange={(e) => setDsKey(e.target.value)}
+                  placeholder="sk-..."
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="ds-model">模型</label>
+                <select id="ds-model" className="select" value={dsModel} onChange={(e) => setDsModel(e.target.value)}>
+                  <option value="deepseek-v4-flash">deepseek-v4-flash（推荐）</option>
+                  <option value="deepseek-v4-pro">deepseek-v4-pro（更强，更慢）</option>
+                </select>
+              </div>
+              <button
+                className="btn btn-primary btn-block"
+                onClick={() => {
+                  saveDsConfig({ key: dsKey, model: dsModel })
+                  setShowDs(false)
+                  notify(dsKey ? "DeepSeek 已接入，下次生成将使用真实模型" : "已切换到本地演示引擎", "ok")
+                }}
+              >
+                保存配置
+              </button>
+              <button
+                className="btn btn-ghost btn-block btn-sm"
+                onClick={() => {
+                  setDsKey("")
+                  saveDsConfig({ key: "", model: dsModel })
+                  notify("已清除 Key，回到本地演示模式", "info")
+                }}
+              >
+                清除 Key（回到演示模式）
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
