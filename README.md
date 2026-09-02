@@ -78,7 +78,8 @@ APP_PORT=80 docker compose up -d --build
 
 `.github/workflows/deploy-server.yml` 已内置 SSH 部署：在仓库 Secrets 中配置
 `SSH_HOST / SSH_USERNAME / SSH_KEY / SSH_PORT(可选) / APP_DIR(可选)`，
-服务器上先把仓库 clone 到 `APP_DIR`，之后每次 push 自动 `git pull + bash deploy.sh`。
+服务器上先把仓库 clone 到 `APP_DIR`，然后在 Actions 页面**手动触发** Deploy to server
+（配置完成后如需每次 push 自动发布，把该 workflow 的触发条件改回 push 即可）。
 
 ## 目录结构
 
