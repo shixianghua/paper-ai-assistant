@@ -41,9 +41,14 @@ function parseBlocks(md) {
   const lines = String(md || "").split("\n").map((s) => s.trimEnd())
   let para = []
   let table = null
+  const clean = (s) =>
+    String(s || "")
+      .replace(/\*\*|__|\*|`|^#{1,6}\s*/g, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .trim()
   const flushPara = () => {
     if (para.length) {
-      const text = para.join("").trim()
+      const text = clean(para.join(""))
       if (text) blocks.push({ kind: "p", text })
       para = []
     }
@@ -61,16 +66,20 @@ function parseBlocks(md) {
       flushTable()
       return
     }
+    if (/^!\[.*\]\(/.test(t) || /^(Figure|Fig\.?|Image|Picture)\s*\d/i.test(t)) {
+      flushPara()
+      return
+    }
     const head = t.match(/^(#{2,4})\s+(.*)/)
     if (head) {
       flushPara()
       flushTable()
-      blocks.push({ kind: "h4", text: head[2].trim() })
+      blocks.push({ kind: "h4", text: clean(head[2]) })
       return
     }
     if (t.startsWith("|")) {
       flushPara()
-      const cells = t.replace(/^\||\|$/g, "").split("|").map((c) => c.trim())
+      const cells = t.replace(/^\||\|$/g, "").split("|").map(clean)
       if (cells.every((c) => /^:?-{2,}:?$/.test(c))) return
       if (!table) {
         table = { title: null, headers: cells, rows: [] }
@@ -91,9 +100,10 @@ function parseBlocks(md) {
 
 function injectFlow(blocks, children) {
   if (blocks.some((b) => b.kind === "figure")) return
-  const steps = (children || []).map((c) => String(c).replace(/^\d+\.\d+\s*/, "")).slice(0, 5)
+  const n = Math.max(3, Math.min((children || []).length, 5))
+  const steps = ["提出问题", "文献与理论梳理", "方案设计与实施", "结果与分析", "结论与展望"].slice(0, n)
   if (steps.length >= 2) {
-    blocks.push({ kind: "figure", figure: figFlow({ title: "本章内容与研究路径示意图（AI 自动生成）", steps }) })
+    blocks.push({ kind: "figure", figure: figFlow({ title: "本章研究路径示意图", steps }) })
   }
 }
 
@@ -101,6 +111,11 @@ export async function realFullDoc(
   { outline, topic, typeLabel, edu, lang, words, refCount },
   { onLog, onProgress, onChunk } = {},
 ) {
+  const strip = (s) =>
+    String(s || "")
+      .replace(/\*\*|__|\*|`/g, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .trim()
   const chapters = outline.filter((n) => n.level === 1 && !n.special)
   const doc = { title: topic, metaLine: "", abstract: "", keywords: [], toc: [], sections: [], refs: [], refsNote: "", ack: "" }
   doc.metaLine = `${typeLabel} · ${edu} · ${lang} · 目标 ${words} 字 · DeepSeek V4 Flash 真实生成`
@@ -115,8 +130,8 @@ export async function realFullDoc(
       temperature: 0.4,
     }),
   )
-  doc.abstract = abs.abstract || ""
-  doc.keywords = Array.isArray(abs.keywords) ? abs.keywords.slice(0, 6) : []
+  doc.abstract = strip(abs.abstract)
+  doc.keywords = Array.isArray(abs.keywords) ? abs.keywords.map(strip).filter(Boolean).slice(0, 6) : []
   onLog?.({ text: "摘要与关键词生成完成", kind: "done" })
   onProgress?.(12)
 
@@ -128,7 +143,7 @@ export async function realFullDoc(
     realRefs = []
   }
   if (realRefs.length) {
-    doc.refs = realRefs.map((r) => r.text)
+    doc.refs = realRefs.map((r) => strip(r.text))
     doc.refsNote =
       "以下文献来自 Crossref 实时检索（含 DOI，可在线核验）。如需知网可检索文献，请将知网导出的 GB/T 7714 条目粘贴进“投喂/资料”区，系统将原样采用。"
   } else {
@@ -141,7 +156,7 @@ export async function realFullDoc(
           temperature: 0.2,
         }),
       )
-      doc.refs = (refData.references || []).map((r) => r.text).filter(Boolean).slice(0, Number(refCount) || 12)
+      doc.refs = (refData.references || []).map((r) => strip(r.text)).filter(Boolean).slice(0, Number(refCount) || 12)
     } catch {
       doc.refs = []
     }
@@ -199,7 +214,7 @@ export async function realFullDoc(
   onProgress?.(96)
   onLog?.({ text: "正在撰写致谢并统一格式…", kind: "run" })
   try {
-    doc.ack = (await callDeepSeek({
+    doc.ack = strip(await callDeepSeek({
       system: `${PROF} 只输出300字以内的致谢正文。`,
       user: `论文题目：${topic}`,
       maxTokens: 900,
