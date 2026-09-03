@@ -51,6 +51,8 @@ export async function callDeepSeek({ system, user, maxTokens = 4096, temperature
     stream: false,
   }
   if (json) body.response_format = { type: "json_object" }
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 300000)
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: {
@@ -58,13 +60,26 @@ export async function callDeepSeek({ system, user, maxTokens = 4096, temperature
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(body),
+    signal: ctrl.signal,
   })
+  clearTimeout(timer)
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const msg = data?.error?.message || `DeepSeek 请求失败（HTTP ${res.status}）`
+    const msg =
+      data?.error?.message ||
+      (res.status === 429
+        ? "DeepSeek 请求过于频繁（限流），请稍候自动重试"
+        : `DeepSeek 请求失败（HTTP ${res.status}）`)
     throw new Error(msg)
   }
   const content = data?.choices?.[0]?.message?.content || ""
-  if (!content) throw new Error("DeepSeek 未返回内容，请重试（可能推理被截断）")
+  if (!content) {
+    const finish = data?.choices?.[0]?.finish_reason
+    throw new Error(
+      finish === "length"
+        ? "模型输出长度受限未返回正文，已自动降篇幅重试"
+        : "DeepSeek 未返回正文（推理阶段超长），已自动重试",
+    )
+  }
   return content
 }

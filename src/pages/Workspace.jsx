@@ -426,8 +426,8 @@ export default function Workspace() {
         time: new Date().toISOString(),
       })
       notify("全文生成完成，可导出 Word 或继续使用右侧工具", "ok", 4600)
-    } catch {
-      notify("生成已中断", "err")
+    } catch (e) {
+      notify(`生成中断：${e.message || "请重试"}`, "err", 6000)
     } finally {
       setDocBusy(false)
     }

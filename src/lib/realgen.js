@@ -16,11 +16,22 @@ function stripJson(text) {
   return JSON.parse(raw.slice(start, end + 1))
 }
 
+function withHeartbeat(promise, onLog, intervalMs = 20000) {
+  let ticks = 0
+  const timer = setInterval(() => {
+    ticks += 1
+    onLog?.({ text: `仍在等待 DeepSeek 返回（已等待约 ${Math.round((ticks * intervalMs) / 1000)} 秒），请勿关闭页面…`, kind: "run" })
+  }, intervalMs)
+  const stop = () => clearInterval(timer)
+  promise.then(stop, stop)
+  return promise
+}
+
 export async function realOutline({ typeKey: _typeKey, typeLabel, topic, edu, lang, words, level: _level }, { onLog } = {}) {
   onLog?.({ text: "正在调用 DeepSeek V4 Flash 解析选题并设计论文框架…", kind: "run" })
   const system = `${PROF}\n只输出 JSON，不要 Markdown。结构：{"chapters":[{"title":"第一章 绪论","children":["1.1 研究背景与问题提出","1.2 研究目的与意义","1.3 国内外研究现状","1.4 研究内容与方法","1.5 论文组织结构"]},...]}。论文类型为${typeLabel}，全文目标 ${words} 字，必须包含绪论、理论/概念基础、研究设计或系统设计、结果与分析、结论与建议等标准章，每章 2-5 个“x.y”节；章节标题紧密围绕“${topic}”，不得泛泛而谈。`
   const user = `请为“${topic}”（${edu} · ${lang}）设计一份符合学位论文规范的章节大纲 JSON。`
-  const data = stripJson(await callDeepSeek({ system, user, maxTokens: 2600, temperature: 0.5 }))
+  const data = stripJson(await withHeartbeat(callDeepSeek({ system, user, maxTokens: 2600, temperature: 0.5 }), onLog, 15000))
   const chapters = Array.isArray(data.chapters) ? data.chapters : []
   if (!chapters.length) throw new Error("大纲为空，请重试")
   const items = []
@@ -123,12 +134,16 @@ export async function realFullDoc(
   onLog?.({ text: "DeepSeek V4 Flash 正在撰写摘要与关键词…", kind: "run" })
   onProgress?.(5)
   const abs = stripJson(
-    await callDeepSeek({
-      system: `${PROF}\n只输出 JSON：{"abstract":"正文，不少于380字，须包含研究目的、方法、结果、结论","keywords":["关键词1","关键词2","关键词3"]}。关键词从中提炼，禁用泛词。`,
-      user: `论文题目：${topic}（${typeLabel}，${edu}，${lang}）\n章节：${chapters.map((c) => c.title).join("；")}`,
-      maxTokens: 2600,
-      temperature: 0.4,
-    }),
+    await withHeartbeat(
+      callDeepSeek({
+        system: `${PROF}\n只输出 JSON：{"abstract":"正文，不少于380字，须包含研究目的、方法、结果、结论","keywords":["关键词1","关键词2","关键词3"]}。关键词从中提炼，禁用泛词。`,
+        user: `论文题目：${topic}（${typeLabel}，${edu}，${lang}）\n章节：${chapters.map((c) => c.title).join("；")}`,
+        maxTokens: 2600,
+        temperature: 0.4,
+      }),
+      onLog,
+      15000,
+    ),
   )
   doc.abstract = strip(abs.abstract)
   doc.keywords = Array.isArray(abs.keywords) ? abs.keywords.map(strip).filter(Boolean).slice(0, 6) : []
@@ -180,19 +195,24 @@ export async function realFullDoc(
     onProgress?.(acc)
     let md = ""
     let lastErr = ""
-    for (let attempt = 1; attempt <= 2 && !md; attempt += 1) {
+    for (let attempt = 1; attempt <= 3 && !md; attempt += 1) {
       try {
-        md = await callDeepSeek({
-          system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”；表格用 Markdown 且必须给出真实数据出处或标注占位；引用标注 [n]；图注表注使用中文；禁止空话与重复句式。只输出 Markdown 正文。`,
-          user: `论文题目：${topic}（${typeLabel}，全文目标 ${totalChars} 字）\n当前章节：${chapter.title}（第 ${ci}/${chapters.length} 章）\n本节清单：${kids.map((k) => k.title).join("、")}\n本章目标字数：约 ${allocated} 字（全文剩余 ${remainingChars} 字），请严格控制篇幅，宁短勿滥。\n请撰写本章。`,
-          maxTokens: Math.min(16384, allocated * 2 + 3000),
-          temperature: 0.6,
-        })
+        md = await withHeartbeat(
+          callDeepSeek({
+            system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”；表格用 Markdown 且必须给出真实数据出处或标注占位；引用标注 [n]；图注表注使用中文；禁止空话与重复句式。只输出 Markdown 正文。`,
+            user: `论文题目：${topic}（${typeLabel}，全文目标 ${totalChars} 字）\n当前章节：${chapter.title}（第 ${ci}/${chapters.length} 章）\n本节清单：${kids.map((k) => k.title).join("、")}\n本章目标字数：约 ${allocated} 字（全文剩余 ${remainingChars} 字），请严格控制篇幅，宁短勿滥。\n请撰写本章。`,
+            maxTokens: Math.min(16384, allocated * 2 + 3000),
+            temperature: 0.6,
+          }),
+          onLog,
+          25000,
+        )
       } catch (e) {
         lastErr = e.message
-        if (attempt === 1) {
-          onLog?.({ text: `${chapter.title} 首次请求失败，正在自动重试…`, kind: "run" })
-          await new Promise((r) => setTimeout(r, 1200))
+        if (attempt < 3) {
+          const wait = attempt === 1 ? 2500 : 6000
+          onLog?.({ text: `${chapter.title} 请求失败（${e.message}），${wait / 1000} 秒后自动重试…`, kind: "run" })
+          await new Promise((r) => setTimeout(r, wait))
         }
       }
     }
