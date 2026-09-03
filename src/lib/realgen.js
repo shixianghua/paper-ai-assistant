@@ -201,7 +201,7 @@ export async function realFullDoc(
           callDeepSeek({
             system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”；表格用 Markdown 且必须给出真实数据出处或标注占位；引用标注 [n]；图注表注使用中文；禁止空话与重复句式。只输出 Markdown 正文。`,
             user: `论文题目：${topic}（${typeLabel}，全文目标 ${totalChars} 字）\n当前章节：${chapter.title}（第 ${ci}/${chapters.length} 章）\n本节清单：${kids.map((k) => k.title).join("、")}\n本章目标字数：约 ${allocated} 字（全文剩余 ${remainingChars} 字），请严格控制篇幅，宁短勿滥。\n请撰写本章。`,
-            maxTokens: Math.min(16384, allocated * 2 + 3000),
+            maxTokens: Math.min(8192, allocated * 2 + 3000),
             temperature: 0.6,
           }),
           onLog,

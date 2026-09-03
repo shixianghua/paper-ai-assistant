@@ -416,6 +416,19 @@ export default function Workspace() {
       )
       setDoc(finalDoc)
       saveSessionDoc(finalDoc)
+      const failedChapters = (finalDoc.sections || []).filter((s) =>
+        (s.blocks || []).some((b) => b.text && b.text.includes("自动生成暂时失败")),
+      )
+      const doneWords = Math.round(docWordCount(finalDoc) / 100) / 10
+      notify(
+        failedChapters.length
+          ? `生成结束：${finalDoc.sections.length} 章 · 约 ${doneWords} 千字 · ${failedChapters.length} 章失败（${failedChapters
+              .map((s) => s.title)
+              .join("、")}），请用“无限改稿”重试`
+          : `生成完成：${finalDoc.sections.length} 章 · 约 ${doneWords} 千字 · 正文可编辑`,
+        failedChapters.length ? "err" : "ok",
+        9000,
+      )
       addRecord({
         id: uid("rec"),
         title: finalDoc.title,
