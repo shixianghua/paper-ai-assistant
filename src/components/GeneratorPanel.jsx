@@ -92,8 +92,12 @@ export default function GeneratorPanel({ heading = "在线体验 · 从题目到
       setOutline(result)
       saveSessionOutline(result, { ...form, topic: form.topic.trim(), refCount: form.refCount })
       notify("免费大纲已生成，可进入工作台继续全文写作", "ok", 4200)
-    } catch {
-      /* cancelled */
+    } catch (e) {
+      if (token === runRef.current) {
+        const msg = e.message || "未知错误"
+        setLogs((prev) => [...prev, { id: `err-${Date.now()}`, text: `大纲生成失败：${msg}`, kind: "err" }])
+        notify(`大纲生成失败：${msg}`, "err", 8000)
+      }
     } finally {
       if (token === runRef.current) setRunning(false)
     }

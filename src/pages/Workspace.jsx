@@ -388,6 +388,8 @@ export default function Workspace() {
       setActiveId(result[0]?.id || null)
       setTab("outline")
       notify("大纲生成完成，可点选章节修改后再撰写全文", "ok", 4000)
+    } catch (e) {
+      notify(`大纲生成失败：${e.message || "请重试"}`, "err", 8000)
     } finally {
       setOutlineBusy(false)
     }
