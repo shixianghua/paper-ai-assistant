@@ -94,6 +94,7 @@
           <div class="cards" id="payStatus" style="margin-top:12px"></div>
           <div class="bar">
             <button id="checkPending" class="ghost">立即检查待支付订单（自动通道）</button>
+            <button id="diagBtn" class="ghost">检测支付配置（支付宝/微信）</button>
             <span class="muted">若配置了自动支付通道，点此可立即查询所有待支付订单并自动到账</span>
           </div>
         </section>
@@ -360,6 +361,34 @@
           loadUsers($("#userQuery").value.trim())
           loadStats()
         }
+      }
+      $("#diagBtn").onclick = async () => {
+        const key = localStorage.getItem("sg.admin.key") || ""
+        const r = await fetch("./api/pay.php?action=diag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Admin-Key": key },
+          body: JSON.stringify({ action: "diag", key }),
+        })
+          .then((x) => x.json())
+          .catch(() => ({}))
+        if (!r.ok) return toast(r.error || "检测失败")
+        const d = r.report || {}
+        alert(
+          [
+            "支付通道：" + (d.provider || "-"),
+            "支付宝 APPID：" + (d.appid || "-"),
+            "应用私钥：" + (d.hasPrivateKey ? "已配置" : "未配置"),
+            "支付宝公钥：" + (d.hasPublicKey ? "已配置" : "未配置"),
+            "签名测试：" + (d.signTest ? "通过" : "未测试/失败"),
+            "接口调用：" + (d.apiOk ? "成功" : "失败" + (d.apiCode ? "（" + d.apiCode + "）" : "")),
+            d.apiError ? "接口错误：" + d.apiError : "",
+            "",
+            d.result || "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        )
+        toast(d.result || "检测完成")
       }
       $("#closeDlg").onclick = () => $("#detailDlg").close()
       document.querySelectorAll(".tabs button").forEach((btn) => {

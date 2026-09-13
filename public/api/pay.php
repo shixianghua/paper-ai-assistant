@@ -136,6 +136,37 @@ try {
             out(['ok' => true]);
         }
 
+        /* 支付通道配置自检：管理员可一键确认密钥、签约是否正常 */
+        case 'diag': {
+            require_admin();
+            $privateKey = alipay_key(ALIPAY_PRIVATE_KEY, ALIPAY_PRIVATE_KEY_PATH, 'PRIVATE');
+            $publicKey = alipay_key(ALIPAY_PUBLIC_KEY, ALIPAY_PUBLIC_KEY_PATH, 'PUBLIC');
+            $report = [
+                'provider' => PAY_PROVIDER,
+                'appid' => ALIPAY_APPID,
+                'hasPrivateKey' => $privateKey !== '',
+                'hasPublicKey' => $publicKey !== '',
+            ];
+            if ($privateKey === '') {
+                $report['result'] = '缺少「应用私钥」：请在 config.php 填 ALIPAY_PRIVATE_KEY，或把私钥保存为 api/cert/alipay_private_key.pem';
+                out(['ok' => true, 'report' => $report]);
+            }
+            $report['signTest'] = alipay_sign(['probe' => 'ok'], $privateKey) !== '';
+            $probe = alipay_request('alipay.trade.query', ['out_trade_no' => 'DIAG' . time()]);
+            $report['apiOk'] = $probe['ok'];
+            $report['apiError'] = $probe['ok'] ? '' : $probe['error'];
+            $report['apiCode'] = $probe['code'] ?? '';
+            $code = (string) ($report['apiCode'] ?: '');
+            if ($probe['ok'] || $code === '40004') {
+                $report['result'] = '✅ 支付宝配置正常：密钥可用、接口权限正常（返回“交易不存在”属于预期）';
+            } elseif ($code === '40006' || mb_strpos((string) $report['apiError'], '权限') !== false) {
+                $report['result'] = '⚠️ 密钥正常，但接口无权限：说明「当面付」产品还没签约，请到商家平台/开放平台申请开通';
+            } else {
+                $report['result'] = '❌ 接口报错：' . $report['apiError'];
+            }
+            out(['ok' => true, 'report' => $report]);
+        }
+
         case 'mockpay': {
             // 测试通道的模拟付款页：把订单标记为已支付，用于验证自动发放链路
             $orderNo = param($in, 'order_no');
