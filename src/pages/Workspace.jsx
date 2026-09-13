@@ -47,7 +47,9 @@ import {
 import {
   addRecord,
   clearSession,
+  consumeQuota,
   notify,
+  quotaLeft,
   saveSessionDoc,
   saveSessionOutline,
   useStore,
@@ -380,6 +382,11 @@ export default function Workspace() {
       notify("请先生成并确认大纲", "err")
       return
     }
+    const left = quotaLeft()
+    if (left !== null && left <= 0) {
+      notify("套餐次数已用完：请在首页「价格」区购买套餐，核销后额度立即到账", "err", 7000)
+      return
+    }
     cancelRef.current = false
     setDocBusy(true)
     setProgress(0)
@@ -420,6 +427,14 @@ export default function Workspace() {
         time: new Date().toISOString(),
       })
       notify("全文生成完成，可导出 Word 或继续使用右侧工具", "ok", 4600)
+      const used = await consumeQuota({
+        title: meta.topic || finalDoc.title,
+        doc_type: DOC_TYPES.find((t) => t.key === meta.typeKey)?.label || "论文",
+        words: meta.words,
+      })
+      if (used.ok && used.user) {
+        notify(`本次已扣减 1 篇，剩余 ${used.user.quotaLeft} 篇`, "info", 6000)
+      }
     } catch (e) {
       notify(`生成中断：${e.message || "请重试"}`, "err", 6000)
     } finally {
@@ -565,6 +580,11 @@ export default function Workspace() {
               <span className="user-chip">
                 <span className="avatar">{user.name.slice(-1)}</span>
                 {user.name}
+                {typeof user.quotaLeft === "number" && (
+                  <span className="quota-chip" title="剩余可生成篇数">
+                    剩 {user.quotaLeft} 篇
+                  </span>
+                )}
               </span>
             ) : (
               <button className="btn btn-primary btn-sm" onClick={() => setLogin(true)}>

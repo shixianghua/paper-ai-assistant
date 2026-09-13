@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>升格论文系统 · 管理后台</title>
+    <style>
+      :root {
+        --bg: #0b1023;
+        --card: #151a33;
+        --line: #262d4d;
+        --ink: #eef1ff;
+        --muted: #98a1c6;
+        --brand: #6d5efc;
+        --ok: #22c55e;
+        --warn: #f59e0b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+        background: radial-gradient(1200px 600px at 10% -10%, #1b2350, var(--bg));
+        color: var(--ink);
+        min-height: 100vh;
+      }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 18px 60px; }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+      .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+      input, button, select {
+        font: inherit;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: #101531;
+        color: var(--ink);
+        padding: 9px 12px;
+      }
+      button { cursor: pointer; background: var(--brand); border-color: var(--brand); font-weight: 700; }
+      button.ghost { background: #101531; border-color: var(--line); font-weight: 500; }
+      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+      .tabs button { background: #101531; border-color: var(--line); font-weight: 600; }
+      .tabs button.on { background: var(--brand); border-color: var(--brand); }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+      .card .k { color: var(--muted); font-size: 12.5px; }
+      .card .v { font-size: 24px; font-weight: 800; margin-top: 6px; }
+      table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 14px; overflow: hidden; }
+      th, td { padding: 10px 12px; text-align: left; font-size: 13.5px; border-bottom: 1px solid var(--line); }
+      th { background: #1b2140; color: var(--muted); font-weight: 700; }
+      tr:last-child td { border-bottom: none; }
+      .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+      .pill.pending { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
+      .pill.paid { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
+      .muted { color: var(--muted); }
+      .row-actions button { padding: 4px 10px; font-size: 12.5px; margin-right: 6px; }
+      .hidden { display: none; }
+      .toast {
+        position: fixed; right: 18px; bottom: 18px; background: #1b2140; border: 1px solid var(--line);
+        padding: 12px 16px; border-radius: 12px; font-size: 13.5px; max-width: 380px; box-shadow: 0 18px 40px -20px #000;
+      }
+      dialog {
+        border: 1px solid var(--line); background: var(--card); color: var(--ink);
+        border-radius: 16px; padding: 18px; width: min(760px, 92vw); max-height: 86vh; overflow: auto;
+      }
+      dialog::backdrop { background: rgba(4, 8, 20, 0.66); }
+      .kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; font-size: 13.5px; margin-bottom: 12px; }
+      .kv .k { color: var(--muted); }
+      h3 { margin: 18px 0 8px; font-size: 15px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>升格智能论文系统 · 管理后台</h1>
+      <div class="sub">查看用户充值、已用/剩余篇数与订单核销（同一数据库：b12_42905559_paper）</div>
+
+      <div class="bar">
+        <input id="key" type="password" placeholder="管理密钥（X-Admin-Key）" style="min-width: 300px" />
+        <button id="loginBtn">进入后台</button>
+        <button id="refreshBtn" class="ghost">刷新数据</button>
+        <span id="status" class="muted"></span>
+      </div>
+
+      <div id="panel" class="hidden">
+        <div class="tabs">
+          <button data-tab="stats" class="on">概览</button>
+          <button data-tab="users">用户</button>
+          <button data-tab="orders">订单</button>
+        </div>
+
+        <section id="tab-stats">
+          <div class="cards" id="statCards"></div>
+        </section>
+
+        <section id="tab-users" class="hidden">
+          <div class="bar">
+            <input id="userQuery" placeholder="搜索手机号 / 昵称" style="min-width: 240px" />
+            <button id="userSearch" class="ghost">搜索</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th><th>手机号</th><th>昵称</th><th>累计充值</th><th>总篇数</th><th>已用</th><th>剩余</th><th>注册时间</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="userRows"></tbody>
+          </table>
+        </section>
+
+        <section id="tab-orders" class="hidden">
+          <div class="bar">
+            <button id="filterPending" class="ghost">只看待核销</button>
+            <button id="filterAll" class="ghost">全部订单</button>
+          </div>
+          <table>
+            <thead>
+              <tr><th>订单号</th><th>用户</th><th>套餐</th><th>金额</th><th>状态</th><th>下单时间</th><th>操作</th></tr>
+            </thead>
+            <tbody id="orderRows"></tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+
+    <dialog id="detailDlg">
+      <div id="detailBody"></div>
+      <div style="text-align: right; margin-top: 12px"><button class="ghost" id="closeDlg">关闭</button></div>
+    </dialog>
+
+    <script>
+      const $ = (sel) => document.querySelector(sel)
+      const api = (action, extra = {}) => {
+        const key = localStorage.getItem("sg.admin.key") || ""
+        return fetch(`./api/admin.php?action=${action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Admin-Key": key },
+          // key 同时放进请求体：部分免费主机会丢弃自定义请求头
+          body: JSON.stringify({ action, key, ...extra }),
+        }).then((r) => r.json())
+      }
+      let toastTimer = null
+      const toast = (msg) => {
+        let el = $(".toast")
+        if (!el) {
+          el = document.createElement("div")
+          el.className = "toast"
+          document.body.appendChild(el)
+        }
+        el.textContent = msg
+        clearTimeout(toastTimer)
+        toastTimer = setTimeout(() => el.remove(), 4200)
+      }
+      const fmtTime = (s) => (s ? String(s).replace("T", " ").slice(0, 16) : "—")
+
+      async function loadStats() {
+        const r = await api("stats")
+        if (!r.ok) return toast(r.error || "加载失败")
+        const items = [
+          ["注册用户", r.users],
+          ["累计充值金额", "¥" + Number(r.amountPaid || 0).toFixed(2)],
+          ["已售篇数", r.quotaTotal],
+          ["已用篇数", r.quotaUsed],
+          ["剩余篇数", r.quotaLeft],
+          ["待核销订单", r.pendingOrders],
+          ["今日新增用户", r.newUsersToday],
+          ["今日使用次数", r.usedToday],
+        ]
+        $("#statCards").innerHTML = items
+          .map(([k, v]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`)
+          .join("")
+      }
+
+      async function loadUsers(q = "") {
+        const r = await api("users", { q })
+        if (!r.ok) return toast(r.error || "加载失败")
+        $("#userRows").innerHTML = r.users
+          .map(
+            (u) => `<tr>
+              <td>${u.id}</td>
+              <td>${u.phone}</td>
+              <td>${u.name || ""}</td>
+              <td>¥${Number(u.amountPaid || 0).toFixed(2)}</td>
+              <td>${u.quotaTotal}</td>
+              <td>${u.quotaUsed}</td>
+              <td><b style="color:${u.quotaLeft > 0 ? "#4ade80" : "#f87171"}">${u.quotaLeft}</b></td>
+              <td class="muted">${fmtTime(u.createdAt)}</td>
+              <td class="row-actions">
+                <button class="ghost" data-detail="${u.id}">详情</button>
+                <button class="ghost" data-adjust="${u.id}">调整</button>
+              </td>
+            </tr>`,
+          )
+          .join("")
+        $("[data-detail]")
+      }
+
+      async function loadOrders(status = "") {
+        const r = await api("orders", status ? { status } : {})
+        if (!r.ok) return toast(r.error || "加载失败")
+        $("#orderRows").innerHTML = r.orders
+          .map(
+            (o) => `<tr>
+              <td style="font-family:monospace">${o.order_no}</td>
+              <td>${o.phone}${o.name ? `<span class="muted">（${o.name}）</span>` : ""}</td>
+              <td>${o.plan_label} · ${o.plan_count} 篇</td>
+              <td>¥${Number(o.amount).toFixed(2)}</td>
+              <td><span class="pill ${o.status}">${o.status === "paid" ? "已核销" : "待核销"}</span></td>
+              <td class="muted">${fmtTime(o.created_at)}</td>
+              <td class="row-actions">
+                ${o.status === "pending" ? `<button data-paid="${o.order_no}">核销开通</button>` : ""}
+                <button class="ghost" data-user="${o.user_id}">查看用户</button>
+              </td>
+            </tr>`,
+          )
+          .join("")
+      }
+
+      async function showUser(id) {
+        const r = await api("user", { id })
+        if (!r.ok) return toast(r.error || "加载失败")
+        const u = r.user
+        $("#detailBody").innerHTML = `
+          <h2 style="margin:0 0 10px">${u.phone} <span class="muted">${u.name || ""}</span></h2>
+          <div class="kv">
+            <div class="k">累计充值</div><div>¥${Number(u.amountPaid).toFixed(2)}</div>
+            <div class="k">总篇数</div><div>${u.quotaTotal}</div>
+            <div class="k">已用</div><div>${u.quotaUsed}</div>
+            <div class="k">剩余</div><div><b style="color:${u.quotaLeft > 0 ? "#4ade80" : "#f87171"}">${u.quotaLeft}</b></div>
+            <div class="k">注册时间</div><div>${fmtTime(u.createdAt)}</div>
+            <div class="k">最近登录</div><div>${fmtTime(u.lastLogin)}</div>
+          </div>
+          <h3>订单（${r.orders.length}）</h3>
+          <table><thead><tr><th>订单号</th><th>套餐</th><th>金额</th><th>状态</th><th>时间</th></tr></thead>
+          <tbody>${r.orders
+            .map(
+              (o) =>
+                `<tr><td style="font-family:monospace">${o.order_no}</td><td>${o.plan_label}</td><td>¥${Number(
+                  o.amount,
+                ).toFixed(2)}</td><td>${o.status === "paid" ? "已核销" : "待核销"}</td><td class="muted">${fmtTime(
+                  o.created_at,
+                )}</td></tr>`,
+            )
+            .join("")}</tbody></table>
+          <h3>使用明细（${r.usage.length}）</h3>
+          <table><thead><tr><th>标题</th><th>类型</th><th>字数</th><th>时间</th></tr></thead>
+          <tbody>${r.usage
+            .map(
+              (x) =>
+                `<tr><td>${x.title}</td><td>${x.doc_type || "—"}</td><td>${x.words || "—"}</td><td class="muted">${fmtTime(
+                  x.created_at,
+                )}</td></tr>`,
+            )
+            .join("")}</tbody></table>
+        `
+        $("#detailDlg").showModal()
+      }
+
+      async function adjustUser(id) {
+        const r = await api("user", { id })
+        if (!r.ok) return toast(r.error || "加载失败")
+        const u = r.user
+        const total = prompt("总篇数（quota_total）", u.quotaTotal)
+        if (total === null) return
+        const used = prompt("已用篇数（quota_used）", u.quotaUsed)
+        if (used === null) return
+        const amount = prompt("累计充值金额（元）", u.amountPaid)
+        if (amount === null) return
+        const note = prompt("备注（可选）", "") || ""
+        const res = await api("setQuota", { id, quota_total: total, quota_used: used, amount_paid: amount, note })
+        toast(res.ok ? "已更新" : res.error || "更新失败")
+        if (res.ok) {
+          loadUsers($("#userQuery").value.trim())
+          loadStats()
+        }
+      }
+
+      document.addEventListener("click", async (e) => {
+        const t = e.target
+        if (!(t instanceof HTMLElement)) return
+        if (t.dataset.detail) showUser(Number(t.dataset.detail))
+        if (t.dataset.user) showUser(Number(t.dataset.user))
+        if (t.dataset.adjust) adjustUser(Number(t.dataset.adjust))
+        if (t.dataset.paid) {
+          if (!confirm(`确认已收到订单 ${t.dataset.paid} 的付款？确认后会给该用户增加对应篇数并累计充值金额。`)) return
+          const note = prompt("备注（可选，例如：微信支付尾号/时间）", "") || ""
+          const r = await api("markPaid", { order_no: t.dataset.paid, note })
+          toast(r.ok ? "核销成功，已为用户开通" : r.error || "核销失败")
+          if (r.ok) {
+            loadOrders()
+            loadUsers($("#userQuery").value.trim())
+            loadStats()
+          }
+        }
+      })
+
+      $("#loginBtn").onclick = async () => {
+        localStorage.setItem("sg.admin.key", $("#key").value.trim())
+        const r = await api("stats")
+        if (!r.ok) {
+          $("#status").textContent = r.error || "密钥不正确"
+          return
+        }
+        $("#panel").classList.remove("hidden")
+        $("#status").textContent = "已连接"
+        $("#key").value = localStorage.getItem("sg.admin.key")
+        loadStats()
+        loadUsers()
+        loadOrders("")
+      }
+      $("#refreshBtn").onclick = () => {
+        loadStats()
+        loadUsers($("#userQuery").value.trim())
+        loadOrders()
+      }
+      $("#userSearch").onclick = () => loadUsers($("#userQuery").value.trim())
+      $("#userQuery").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") loadUsers($("#userQuery").value.trim())
+      })
+      $("#filterPending").onclick = () => loadOrders("pending")
+      $("#filterAll").onclick = () => loadOrders("")
+      $("#closeDlg").onclick = () => $("#detailDlg").close()
+      document.querySelectorAll(".tabs button").forEach((btn) => {
+        btn.onclick = () => {
+          document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b === btn))
+          ;["stats", "users", "orders"].forEach((name) => {
+            $("#tab-" + name).classList.toggle("hidden", name !== btn.dataset.tab)
+          })
+        }
+      })
+      if (localStorage.getItem("sg.admin.key")) {
+        $("#key").value = localStorage.getItem("sg.admin.key")
+        $("#loginBtn").click()
+      }
+    </script>
+  </body>
+</html>

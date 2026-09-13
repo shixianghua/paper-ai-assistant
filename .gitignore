@@ -13,6 +13,9 @@ dist-ssr
 *.local
 .playwright-cli
 
+# 含数据库口令与后台密钥的真实配置（只保留在本地与服务器上）
+public/api/config.php
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

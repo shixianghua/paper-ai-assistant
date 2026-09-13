@@ -1,8 +1,10 @@
 import { useSyncExternalStore } from "react"
+import { apiAvailable, apiConsume, apiLogin, apiLogout, apiMe, apiRegister } from "./api"
 
 const LS_USER = "sg.user"
 const LS_RECORDS = "sg.records"
 const LS_ACCOUNTS = "sg.accounts"
+const LS_TOKEN = "sg.token"
 
 function read(key, fallback) {
   try {
@@ -38,6 +40,15 @@ let snapshot = {
   sessionOutline: null,
   sessionMeta: null,
   toasts: [],
+  backend: false,
+  token: (() => {
+    try {
+      return localStorage.getItem(LS_TOKEN) || ""
+    } catch {
+      return ""
+    }
+  })(),
+  account: null, // { orders, usage }（服务器模式）
 }
 
 const listeners = new Set()
@@ -105,7 +116,120 @@ function setUser(user) {
   emit()
 }
 
-export function registerAccount(phone, password) {
+/* ---------- 服务器模式（Byet 主机 PHP + MySQL） ---------- */
+
+function setToken(token) {
+  snapshot = { ...snapshot, token }
+  try {
+    if (token) localStorage.setItem(LS_TOKEN, token)
+    else localStorage.removeItem(LS_TOKEN)
+  } catch {
+    /* 忽略 */
+  }
+}
+
+export async function initBackend() {
+  const ok = await apiAvailable()
+  snapshot = { ...snapshot, backend: ok }
+  emit()
+  if (ok && snapshot.token) {
+    try {
+      const data = await apiMe(snapshot.token)
+      snapshot = { ...snapshot, user: data.user, account: { orders: data.orders, usage: data.usage } }
+      try {
+        localStorage.setItem(LS_USER, JSON.stringify(data.user))
+      } catch {
+        /* 忽略 */
+      }
+      emit()
+    } catch {
+      setToken("")
+    }
+  }
+  return ok
+}
+
+export async function refreshAccount() {
+  if (!snapshot.backend || !snapshot.token) return null
+  const data = await apiMe(snapshot.token)
+  snapshot = { ...snapshot, user: data.user, account: { orders: data.orders, usage: data.usage } }
+  try {
+    localStorage.setItem(LS_USER, JSON.stringify(data.user))
+  } catch {
+    /* 忽略 */
+  }
+  emit()
+  return data
+}
+
+/** 生成全文成功后扣减 1 篇额度（服务器模式） */
+export async function consumeQuota(payload) {
+  if (!snapshot.backend || !snapshot.token) return { ok: true, local: true }
+  try {
+    const data = await apiConsume(snapshot.token, payload)
+    snapshot = { ...snapshot, user: data.user }
+    try {
+      localStorage.setItem(LS_USER, JSON.stringify(data.user))
+    } catch {
+      /* 忽略 */
+    }
+    emit()
+    return { ok: true, user: data.user }
+  } catch (e) {
+    notify(e.message || "扣减次数失败", "err", 5200)
+    return { ok: false, error: e.message }
+  }
+}
+
+export function quotaLeft() {
+  const u = snapshot.user
+  if (!snapshot.backend || !u || typeof u.quotaLeft !== "number") return null
+  return u.quotaLeft
+}
+
+export async function registerAccount(phone, password) {
+  if (snapshot.backend) {
+    try {
+      const data = await apiRegister(phone, password)
+      setToken(data.token)
+      setUser(data.user)
+      await refreshAccount().catch(() => {})
+      return { ok: true, user: data.user, server: true }
+    } catch (e) {
+      if (e.code === 0 || e.code === 404) {
+        snapshot = { ...snapshot, backend: false }
+        emit()
+      } else {
+        return { ok: false, error: e.message }
+      }
+    }
+  }
+  return localRegister(phone, password)
+}
+
+export async function loginWithPassword(phone, password) {
+  if (snapshot.backend) {
+    try {
+      const data = await apiLogin(phone, password)
+      setToken(data.token)
+      setUser(data.user)
+      await refreshAccount().catch(() => {})
+      return { ok: true, user: data.user, server: true }
+    } catch (e) {
+      if (e.code === 0 || e.code === 404) {
+        snapshot = { ...snapshot, backend: false }
+        emit()
+      } else {
+        return { ok: false, error: e.message }
+      }
+    }
+  }
+  return localLogin(phone, password)
+}
+
+/* ---------- 本地演示模式（无 PHP 环境时的回退） ---------- */
+
+function localRegister(phone, password) {
   const tel = String(phone || "").trim()
   if (!isValidPhone(tel)) return { ok: false, error: "请输入 11 位手机号（以 1 开头）" }
   if (String(password || "").length < 6) return { ok: false, error: "密码至少 6 位" }
@@ -117,7 +241,7 @@ export function registerAccount(phone, password) {
   return { ok: true, user }
 }
 
-export function loginWithPassword(phone, password) {
+function localLogin(phone, password) {
   const tel = String(phone || "").trim()
   if (!isValidPhone(tel)) return { ok: false, error: "请输入 11 位手机号（以 1 开头）" }
   const hit = readAccounts().find((a) => a.phone === tel)
@@ -133,6 +257,11 @@ export function loginDemo(phone) {
 }
 
 export function logout() {
+  if (snapshot.backend && snapshot.token) {
+    apiLogout(snapshot.token).catch(() => {})
+  }
+  setToken("")
+  snapshot = { ...snapshot, account: null }
   snapshot = { ...snapshot, user: null }
   localStorage.removeItem(LS_USER)
   emit()

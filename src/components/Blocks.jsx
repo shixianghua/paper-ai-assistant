@@ -23,7 +23,8 @@ import {
   Zap,
 } from "lucide-react"
 import { DOC_TYPE_GROUPS, DOC_TYPES, ECO, FAQS, FEATURES, PRICING, STEPS } from "../data/catalog"
-import { notify } from "../lib/store"
+import { notify, useStore } from "../lib/store"
+import { apiCreateOrder } from "../lib/api"
 import { RecordRows, Reveal, SectionHead } from "./Chrome"
 import { scrollToId } from "../lib/scroll"
 
@@ -376,13 +377,32 @@ async function copyText(text) {
 }
 
 function PayModal({ plan, onClose }) {
-  const [orderNo] = useState(makeOrderNo)
+  const { user, backend, token } = useStore()
+  const [orderNo, setOrderNo] = useState(makeOrderNo)
+  const [serverOrder, setServerOrder] = useState(false)
   const [paid, setPaid] = useState(false)
 
   useEffect(() => {
     document.body.classList.add("no-scroll")
     return () => document.body.classList.remove("no-scroll")
   }, [])
+
+  // 已登录且服务器可用时，先在后台登记订单，管理员后台即可看到待核销记录
+  useEffect(() => {
+    if (!backend || !token) return
+    let alive = true
+    apiCreateOrder(token, { plan_label: plan.label, plan_count: plan.count, amount: plan.price })
+      .then((d) => {
+        if (alive && d.order_no) {
+          setOrderNo(d.order_no)
+          setServerOrder(true)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [backend, token, plan])
 
   const orderText = `升格智能论文系统｜订单号：${orderNo}｜套餐：${plan.label}（任写 ${plan.count} 篇）｜金额：¥${plan.price}｜支付方式：微信扫码`
 
@@ -421,8 +441,14 @@ function PayModal({ plan, onClose }) {
           <li>支付后点下方按钮，把「支付截图 + 订单号」发给管理员核对开通</li>
         </ol>
         <div className="pay-order">
-          订单号：<b>{orderNo}</b>（已保存在本浏览器）
+          订单号：<b>{orderNo}</b>
+          {serverOrder ? "（已登记到系统，管理员核销后自动到账）" : "（已保存在本浏览器）"}
         </div>
+        {!user && (
+          <div className="demo-hint" style={{ marginTop: 0 }}>
+            <b>提示：</b> 建议先登录再购买，这样系统会把订单绑定到你的手机号，核销后额度自动到账；未登录时请把订单号与支付截图发给管理员。
+          </div>
+        )}
         {paid ? (
           <div className="pay-done">
             ✓ 订单已登记。请把支付截图与订单号发给管理员，核对后立即为你开通（通常几分钟内）。

@@ -10,6 +10,7 @@ import {
   LogOut,
   Mail,
   Menu,
+  RefreshCw,
   Rocket,
   ShieldCheck,
   X,
@@ -26,6 +27,7 @@ import {
   loginWithPassword,
   logout,
   notify,
+  refreshAccount,
   registerAccount,
   removeRecord,
   useStore,
@@ -57,11 +59,149 @@ export function Logo({ to = "/" }) {
 }
 
 /* ---------- Navbar ---------- */
+/* ---------- 我的账户（额度 / 充值 / 使用明细） ---------- */
+export function AccountModal({ onClose }) {
+  const { user, account, backend } = useStore()
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    document.body.classList.add("no-scroll")
+    return () => document.body.classList.remove("no-scroll")
+  }, [])
+
+  useEffect(() => {
+    if (backend) refreshAccount().catch(() => {})
+  }, [backend])
+
+  const orders = account?.orders || []
+  const usage = account?.usage || []
+  const left = typeof user?.quotaLeft === "number" ? user.quotaLeft : "—"
+  const used = typeof user?.quotaUsed === "number" ? user.quotaUsed : "—"
+  const paid = typeof user?.amountPaid === "number" ? `¥${user.amountPaid.toFixed(2)}` : "—"
+
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="modal-card" style={{ width: "min(560px, 100%)" }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>我的账户</h3>
+          <button className="modal-close" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <p className="modal-sub">
+          {user?.phone ? `账号：${user.phone}` : "未登录"} · {backend ? "已连接服务器" : "本地演示模式"}
+        </p>
+
+        <div className="acct-grid">
+          <div className="acct-card">
+            <div className="k">剩余篇数</div>
+            <div className="v" style={{ color: typeof left === "number" && left <= 0 ? "#e11d48" : "#16a34a" }}>
+              {left}
+            </div>
+          </div>
+          <div className="acct-card">
+            <div className="k">已用篇数</div>
+            <div className="v">{used}</div>
+          </div>
+          <div className="acct-card">
+            <div className="k">累计充值</div>
+            <div className="v">{paid}</div>
+          </div>
+        </div>
+
+        {!backend && (
+          <div className="demo-hint" style={{ marginTop: 4 }}>
+            <b>提示：</b> 当前环境未连接后端数据库（例如 GitHub Pages 静态演示），额度统计仅在 Byet 主机的站点上可用。
+          </div>
+        )}
+
+        <div className="acct-section">
+          <div className="acct-title">
+            订单记录
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await refreshAccount()
+                  notify("已刷新账户数据", "ok", 2400)
+                } catch {
+                  notify("刷新失败，请稍后再试", "err", 3200)
+                }
+                setBusy(false)
+              }}
+            >
+              <RefreshCw size={13} /> 刷新
+            </button>
+          </div>
+          {orders.length ? (
+            <table className="acct-table">
+              <thead>
+                <tr>
+                  <th>订单号</th>
+                  <th>套餐</th>
+                  <th>金额</th>
+                  <th>状态</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.order_no}>
+                    <td style={{ fontFamily: "monospace" }}>{o.order_no}</td>
+                    <td>{o.plan_label}</td>
+                    <td>¥{Number(o.amount).toFixed(2)}</td>
+                    <td>
+                      <span className={`pill ${o.status}`}>{o.status === "paid" ? "已开通" : "待核销"}</span>
+                    </td>
+                    <td className="muted">{formatTime(o.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="acct-empty">还没有订单。购买套餐后，管理员核销即会自动增加篇数。</p>
+          )}
+        </div>
+
+        <div className="acct-section">
+          <div className="acct-title">使用明细（生成全文时扣减 1 篇）</div>
+          {usage.length ? (
+            <table className="acct-table">
+              <thead>
+                <tr>
+                  <th>文档标题</th>
+                  <th>类型</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.map((u, i) => (
+                  <tr key={`${u.created_at}-${i}`}>
+                    <td style={{ maxWidth: 260 }}>{u.title}</td>
+                    <td>{u.doc_type || "—"}</td>
+                    <td className="muted">{formatTime(u.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="acct-empty">还没有使用记录。</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Navbar({ onLogin }) {
   const { user } = useStore()
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState(false)
   const [userMenu, setUserMenu] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 10)
@@ -102,6 +242,11 @@ export function Navbar({ onLogin }) {
               <button className="user-chip" onClick={() => setUserMenu((v) => !v)}>
                 <span className="avatar">{user.name.slice(-1)}</span>
                 {user.name}
+                {typeof user.quotaLeft === "number" && (
+                  <span className="quota-chip" title="剩余篇数">
+                    剩 {user.quotaLeft} 篇
+                  </span>
+                )}
               </button>
               {userMenu && (
                 <div
@@ -119,6 +264,16 @@ export function Navbar({ onLogin }) {
                   }}
                   onMouseLeave={() => setUserMenu(false)}
                 >
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ width: "100%", justifyContent: "flex-start" }}
+                    onClick={() => {
+                      setAccountOpen(true)
+                      setUserMenu(false)
+                    }}
+                  >
+                    <ShieldCheck size={15} /> 我的账户 / 剩余额度
+                  </button>
                   <Link
                     className="btn btn-ghost btn-sm"
                     style={{ width: "100%", justifyContent: "flex-start" }}
@@ -174,6 +329,7 @@ export function Navbar({ onLogin }) {
           ))}
         </div>
       )}
+      {accountOpen && <AccountModal onClose={() => setAccountOpen(false)} />}
     </header>
   )
 }
@@ -205,16 +361,20 @@ export function LoginModal({ mode, onClose }) {
       return
     }
     setBusy(true)
-    setTimeout(() => {
-      const res = tab === "register" ? registerAccount(phone, pwd) : loginWithPassword(phone, pwd)
+    setTimeout(async () => {
+      const res = tab === "register" ? await registerAccount(phone, pwd) : await loginWithPassword(phone, pwd)
       setBusy(false)
       if (!res.ok) {
         notify(res.error, "err", 5200)
         return
       }
       onClose()
-      notify(tab === "register" ? "注册成功，已自动登录" : "登录成功，欢迎回来", "ok", 3600)
-    }, 520)
+      notify(
+        tab === "register" ? "注册成功，已自动登录" : res.server ? "登录成功，欢迎回来" : "登录成功（本地演示模式）",
+        "ok",
+        3600,
+      )
+    }, 460)
   }
 
   // 演示环境一键进入：不需要注册，也不发送短信
