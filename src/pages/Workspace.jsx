@@ -30,7 +30,7 @@ import {
 } from "../data/catalog"
 import { docWordCount, uid } from "../lib/generator"
 import { smartFullDoc, smartOutline } from "../lib/engine"
-import { getDsKey, getDsModel, saveDsConfig } from "../lib/deepseek"
+import { EFFORT_OPTIONS, MODEL_OPTIONS, getDsEffort, getDsKey, getDsModel, modelLabel, saveDsConfig, testDsConnection } from "../lib/deepseek"
 import {
   addRecord,
   clearSession,
@@ -353,6 +353,9 @@ export default function Workspace() {
   const [showDs, setShowDs] = useState(false)
   const [dsKey, setDsKey] = useState(getDsKey())
   const [dsModel, setDsModel] = useState(getDsModel())
+  const [dsEffort, setDsEffort] = useState(getDsEffort())
+  const [dsTest, setDsTest] = useState(null)
+  const [dsTesting, setDsTesting] = useState(false)
   const timers = useRef([])
   const cancelRef = useRef(null)
 
@@ -580,7 +583,7 @@ export default function Workspace() {
               title="配置 DeepSeek API（Key 仅保存在本浏览器，不提交到仓库）"
             >
               <span className="dot" style={{ background: dsKey ? "var(--green-500)" : "var(--amber-400)" }} />
-              {dsKey ? `DeepSeek ${dsModel.replace("deepseek-", "")} · 已接入` : "接入 DeepSeek"}
+              {dsKey ? `${modelLabel(dsModel)} · 已接入` : "接入 DeepSeek"}
             </button>
             {user ? (
               <span className="user-chip">
@@ -988,7 +991,9 @@ export default function Workspace() {
                 ×
               </button>
             </div>
-            <p className="modal-sub">开启后大纲与全文由 DeepSeek V4 Flash 真实生成；Key 仅保存在本浏览器 localStorage，不会写入仓库或发送给第三方。</p>
+            <p className="modal-sub">
+              系统已内置 DeepSeek V4 Flash（接口当前最新的 Flash 版本）为默认模型。Key 仅保存在本浏览器 localStorage，不写入仓库，也不会上传给任何第三方。
+            </p>
             <div className="form-stack">
               <div className="field">
                 <label htmlFor="ds-key">API Key</label>
@@ -999,30 +1004,103 @@ export default function Workspace() {
                   value={dsKey}
                   onChange={(e) => setDsKey(e.target.value)}
                   placeholder="sk-..."
+                  autoComplete="off"
                 />
+                <small style={{ color: "var(--ink-400)", fontSize: 11.5, lineHeight: 1.6 }}>
+                  以 sk- 开头。保存后长期有效，换电脑或清理浏览器数据后需重新填写。
+                </small>
               </div>
               <div className="field">
                 <label htmlFor="ds-model">模型</label>
                 <select id="ds-model" className="select" value={dsModel} onChange={(e) => setDsModel(e.target.value)}>
-                  <option value="deepseek-v4-flash">deepseek-v4-flash（推荐）</option>
-                  <option value="deepseek-v4-pro">deepseek-v4-pro（更强，更慢）</option>
+                  {MODEL_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
                 </select>
+                <small style={{ color: "var(--ink-400)", fontSize: 11.5, lineHeight: 1.6 }}>
+                  {MODEL_OPTIONS.find((m) => m.value === dsModel)?.desc}
+                </small>
               </div>
+              <div className="field">
+                <label htmlFor="ds-effort">思考强度</label>
+                <select id="ds-effort" className="select" value={dsEffort} onChange={(e) => setDsEffort(e.target.value)}>
+                  {EFFORT_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <small style={{ color: "var(--ink-400)", fontSize: 11.5, lineHeight: 1.6 }}>
+                  {EFFORT_OPTIONS.find((m) => m.value === dsEffort)?.desc}
+                </small>
+              </div>
+              <div
+                style={{
+                  background: "var(--indigo-50, #eef2ff)",
+                  border: "1px solid var(--indigo-100, #e0e7ff)",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 11.5,
+                  lineHeight: 1.7,
+                  color: "var(--ink-500)",
+                }}
+              >
+                接口实际可用的模型名只有 deepseek-v4-flash、deepseek-v4-pro（Vision 为实验版）；写成“v4.1-flash”会被接口拒绝，系统已做名称归一化，统一映射到最新的 V4 Flash。关闭思考时，模型额度全部用于正文，长文更不容易在中途停下。
+              </div>
+              {dsTest && (
+                <div
+                  style={{
+                    borderRadius: 10,
+                    padding: "9px 12px",
+                    fontSize: 12,
+                    lineHeight: 1.7,
+                    background: dsTest.ok ? "var(--green-50, #ecfdf5)" : "var(--red-50, #fef2f2)",
+                    border: `1px solid ${dsTest.ok ? "var(--green-200, #a7f3d0)" : "var(--red-200, #fecaca)"}`,
+                    color: dsTest.ok ? "var(--green-700, #047857)" : "var(--red-700, #b91c1c)",
+                  }}
+                >
+                  {dsTest.ok
+                    ? `连接正常：${dsTest.model} 响应 ${dsTest.ms} ms，返回“${dsTest.sample}”。`
+                    : `连接失败：${dsTest.message}`}
+                </div>
+              )}
               <button
                 className="btn btn-primary btn-block"
                 onClick={() => {
-                  saveDsConfig({ key: dsKey, model: dsModel })
+                  saveDsConfig({ key: dsKey, model: dsModel, effort: dsEffort })
                   setShowDs(false)
-                  notify(dsKey ? "DeepSeek 已接入，下次生成将使用真实模型" : "已切换到本地演示引擎", "ok")
+                  notify(
+                    dsKey
+                      ? `DeepSeek 已接入：${modelLabel(dsModel)}，思考强度已按设置生效`
+                      : "已切换到本地演示引擎",
+                    "ok",
+                  )
                 }}
               >
                 保存配置
               </button>
               <button
+                className="btn btn-outline btn-block btn-sm"
+                disabled={dsTesting}
+                onClick={async () => {
+                  saveDsConfig({ key: dsKey, model: dsModel, effort: dsEffort })
+                  setDsTesting(true)
+                  setDsTest(null)
+                  const result = await testDsConnection(dsModel)
+                  setDsTest(result)
+                  setDsTesting(false)
+                }}
+              >
+                {dsTesting ? "正在测试连接…" : "测试连接"}
+              </button>
+              <button
                 className="btn btn-ghost btn-block btn-sm"
                 onClick={() => {
                   setDsKey("")
-                  saveDsConfig({ key: "", model: dsModel })
+                  setDsTest(null)
+                  saveDsConfig({ key: "", model: dsModel, effort: dsEffort })
                   notify("已清除 Key，回到本地演示模式", "info")
                 }}
               >

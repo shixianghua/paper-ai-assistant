@@ -1,4 +1,4 @@
-import { callDeepSeek } from "./deepseek"
+import { callDeepSeek, effortLabel, getDsEffort, getDsModel, modelLabel } from "./deepseek"
 import { figFlow } from "./charts"
 import { fetchRealRefs } from "./reflib"
 
@@ -31,7 +31,13 @@ export async function realOutline({ typeKey: _typeKey, typeLabel, topic, edu, la
   onLog?.({ text: "正在调用 DeepSeek V4 Flash 解析选题并设计论文框架…", kind: "run" })
   const system = `${PROF}\n只输出 JSON，不要 Markdown。结构：{"chapters":[{"title":"第一章 绪论","children":["1.1 研究背景与问题提出","1.2 研究目的与意义","1.3 国内外研究现状","1.4 研究内容与方法","1.5 论文组织结构"]},...]}。论文类型为${typeLabel}，全文目标 ${words} 字，必须包含绪论、理论/概念基础、研究设计或系统设计、结果与分析、结论与建议等标准章，每章 2-5 个“x.y”节；章节标题紧密围绕“${topic}”，不得泛泛而谈。`
   const user = `请为“${topic}”（${edu} · ${lang}）设计一份符合学位论文规范的章节大纲 JSON。`
-  const data = stripJson(await withHeartbeat(callDeepSeek({ system, user, maxTokens: 2600, temperature: 0.5 }), onLog, 15000))
+  const data = stripJson(
+    await withHeartbeat(
+      callDeepSeek({ system, user, maxTokens: 3200, temperature: 0.5, json: true }),
+      onLog,
+      15000,
+    ),
+  )
   const chapters = Array.isArray(data.chapters) ? data.chapters : []
   if (!chapters.length) throw new Error("大纲为空，请重试")
   const items = []
@@ -129,9 +135,9 @@ export async function realFullDoc(
       .trim()
   const chapters = outline.filter((n) => n.level === 1 && !n.special)
   const doc = { title: topic, metaLine: "", abstract: "", keywords: [], toc: [], sections: [], refs: [], refsNote: "", ack: "" }
-  doc.metaLine = `${typeLabel} · ${edu} · ${lang} · 目标 ${words} 字 · DeepSeek V4 Flash 真实生成`
+  doc.metaLine = `${typeLabel} · ${edu} · ${lang} · 目标 ${words} 字 · ${modelLabel(getDsModel())} 真实生成`
 
-  onLog?.({ text: "DeepSeek V4 Flash 正在撰写摘要与关键词…", kind: "run" })
+  onLog?.({ text: `${modelLabel(getDsModel())}（思考强度：${effortLabel(getDsEffort())}）正在撰写摘要与关键词…`, kind: "run" })
   onProgress?.(5)
   const abs = stripJson(
     await withHeartbeat(
@@ -140,6 +146,7 @@ export async function realFullDoc(
         user: `论文题目：${topic}（${typeLabel}，${edu}，${lang}）\n章节：${chapters.map((c) => c.title).join("；")}`,
         maxTokens: 2600,
         temperature: 0.4,
+        json: true,
       }),
       onLog,
       15000,
@@ -169,6 +176,7 @@ export async function realFullDoc(
           user: `论文题目：${topic}；主题：${chapters.map((c) => c.title).join("；")}`,
           maxTokens: 2400,
           temperature: 0.2,
+          json: true,
         }),
       )
       doc.refs = (refData.references || []).map((r) => strip(r.text)).filter(Boolean).slice(0, Number(refCount) || 12)
@@ -199,9 +207,9 @@ export async function realFullDoc(
       try {
         md = await withHeartbeat(
           callDeepSeek({
-            system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”；表格用 Markdown 且必须给出真实数据出处或标注占位；引用标注 [n]；图注表注使用中文；禁止空话与重复句式。只输出 Markdown 正文。`,
-            user: `论文题目：${topic}（${typeLabel}，全文目标 ${totalChars} 字）\n当前章节：${chapter.title}（第 ${ci}/${chapters.length} 章）\n本节清单：${kids.map((k) => k.title).join("、")}\n本章目标字数：约 ${allocated} 字（全文剩余 ${remainingChars} 字），请严格控制篇幅，宁短勿滥。\n请撰写本章。`,
-            maxTokens: Math.min(8192, allocated * 2 + 3000),
+            system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”，按“本节清单”逐节展开并保留小节层级；表格用 Markdown 且必须给出可核查的数据出处，无真实数据时写“［待填入真实数据：指标名称、采集方式、数据来源］”，严禁编造百分比、样本量、显著性结果；引用标注用 [n]；图注表注一律中文；禁止空话、排比堆砌与重复句式。只输出 Markdown 正文，不要输出任何解释或结束语。`,
+            user: `论文题目：${topic}（${typeLabel}，全文目标 ${totalChars} 字）\n当前章节：${chapter.title}（第 ${ci}/${chapters.length} 章）\n本节清单：${kids.map((k) => k.title).join("、")}\n本章目标字数：${allocated} 字，允许浮动 ±15%，即不少于 ${Math.round(allocated * 0.85)} 字、不超过 ${Math.round(allocated * 1.15)} 字；写作时请边写边估算字数，接近上限即收束，不要超写。\n本章完成后全文仍有 ${remainingChars} 字待分配给其余章节。\n请撰写本章。`,
+            maxTokens: Math.min(9000, Math.round(allocated * 1.2) + 900),
             temperature: 0.6,
           }),
           onLog,
@@ -222,6 +230,9 @@ export async function realFullDoc(
     if (md) {
       const used = md.replace(/\s/g, "").length
       remainingChars = Math.max(0, remainingChars - used)
+      const diff = used - allocated
+      const flag = diff > allocated * 0.2 ? "（偏长，已自动收紧后续章节额度）" : diff < -allocated * 0.25 ? "（偏短）" : ""
+      onLog?.({ text: `${chapter.title} · 本章 ${used} 字／目标 ${allocated} 字${flag}`, kind: "run" })
     }
     injectFlow(blocks, kids)
     doc.sections.push({ id: chapter.id, title: chapter.title, level: 1, blocks })
@@ -243,7 +254,11 @@ export async function realFullDoc(
   } catch {
     doc.ack = "感谢指导教师与参与本研究的所有人员。"
   }
-  onLog?.({ text: "DeepSeek V4 Flash 全文生成完成", kind: "done" })
+  const total = llmWordCount(doc)
+  onLog?.({
+    text: `全文生成完成：正文合计约 ${total} 字（目标 ${Math.round(totalChars)} 字，偏差 ${total - Math.round(totalChars) >= 0 ? "+" : ""}${total - Math.round(totalChars)} 字）`,
+    kind: "done",
+  })
   onProgress?.(100)
   return doc
 }
