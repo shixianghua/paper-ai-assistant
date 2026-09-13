@@ -3436,15 +3436,13 @@ ol {
 }
 
 .statement-wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);
-  gap: 22px;
-  align-items: start;
+  display: flow-root;
 }
 
 .statement-img {
-  width: 100%;
+  width: min(880px, 100%);
   display: block;
+  margin: 0 auto;
   border-radius: 18px;
   border: 1px solid var(--line);
   box-shadow: var(--shadow-md);
@@ -3507,7 +3505,7 @@ ol {
 }
 
 @media (max-width: 900px) {
-  .statement-wrap {
-    grid-template-columns: 1fr;
+  .statement-img {
+    width: 100%;
   }
 }
