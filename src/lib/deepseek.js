@@ -10,14 +10,45 @@
 // 不限制思考强度时，长文会出现“正文为空 / 中途截断 / 连点多次才成功”。
 // 因此默认 reasoning_effort=none，把额度全部留给正文；需要深挖论证时可在设置里开启。
 
-const ENDPOINT = "https://api.deepseek.com/chat/completions"
-const MODELS_ENDPOINT = "https://api.deepseek.com/models"
+export const DEFAULT_BASE = "https://api.deepseek.com"
+
+function joinUrl(base, path) {
+  return `${String(base || DEFAULT_BASE).replace(/\/+$/, "")}${path}`
+}
+
+function chatEndpoint() {
+  return joinUrl(getDsBase(), "/chat/completions")
+}
+
+function modelsEndpoint() {
+  return joinUrl(getDsBase(), "/models")
+}
 const REQUEST_TIMEOUT = 300000
 
 const LS_KEY = "sg.ds.key"
 const LS_MODEL = "sg.ds.model"
 const LS_TEMPERATURE = "sg.ds.temp"
 const LS_EFFORT = "sg.ds.effort"
+const LS_BASE = "sg.ds.base"
+
+// 接口地址规范化：允许用户填写自建/代理网关，只填到域名或 /v1 均可
+export function normalizeBase(url) {
+  const raw = String(url || "").trim().replace(/\s+/g, "")
+  if (!raw) return DEFAULT_BASE
+  let v = raw
+  if (!/^https?:\/\//i.test(v)) v = `https://${v}`
+  v = v.replace(/\/+$/, "")
+  v = v.replace(/\/chat\/completions$/i, "").replace(/\/models$/i, "")
+  return v
+}
+
+export function getDsBase() {
+  try {
+    return normalizeBase(localStorage.getItem(LS_BASE) || DEFAULT_BASE)
+  } catch {
+    return DEFAULT_BASE
+  }
+}
 
 export const DEFAULT_MODEL = "deepseek-v4-flash"
 export const DEFAULT_EFFORT = "none"
@@ -129,12 +160,13 @@ export function getDsTemperature() {
   }
 }
 
-export function saveDsConfig({ key, model, temperature, effort } = {}) {
+export function saveDsConfig({ key, model, temperature, effort, base } = {}) {
   try {
     if (key !== undefined) localStorage.setItem(LS_KEY, String(key || "").trim())
     if (model !== undefined) localStorage.setItem(LS_MODEL, normalizeModel(model))
     if (temperature !== undefined) localStorage.setItem(LS_TEMPERATURE, String(temperature))
     if (effort !== undefined) localStorage.setItem(LS_EFFORT, normalizeEffort(effort))
+    if (base !== undefined) localStorage.setItem(LS_BASE, normalizeBase(base))
     return true
   } catch {
     return false
@@ -204,7 +236,7 @@ async function rawCall({ key, model, messages, maxTokens, temperature, json, eff
   const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT)
   let res
   try {
-    res = await fetch(ENDPOINT, {
+    res = await fetch(chatEndpoint(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -234,7 +266,7 @@ export async function listModels() {
   const key = getDsKey()
   if (!key) return []
   try {
-    const res = await fetch(MODELS_ENDPOINT, { headers: { Authorization: `Bearer ${key}` } })
+    const res = await fetch(modelsEndpoint(), { headers: { Authorization: `Bearer ${key}` } })
     const data = await res.json().catch(() => ({}))
     return (data?.data || []).map((m) => m.id).filter(Boolean)
   } catch {

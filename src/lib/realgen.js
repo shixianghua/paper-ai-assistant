@@ -142,7 +142,7 @@ export async function realFullDoc(
   const abs = stripJson(
     await withHeartbeat(
       callDeepSeek({
-        system: `${PROF}\n只输出 JSON：{"abstract":"正文，不少于380字，须包含研究目的、方法、结果、结论","keywords":["关键词1","关键词2","关键词3"]}。关键词从中提炼，禁用泛词。`,
+        system: `${PROF}\n只输出 JSON：{"abstract":"摘要正文","keywords":["关键词1","关键词2","关键词3"]}。摘要要求：280–300 字，硬性上限 300 字（国家开放大学格式规定摘要 300 字以内），须包含研究目的、方法、主要结果与结论，一段到底、不分段。关键词 3–7 个，从全文提炼、禁用泛词。`,
         user: `论文题目：${topic}（${typeLabel}，${edu}，${lang}）\n章节：${chapters.map((c) => c.title).join("；")}`,
         maxTokens: 2600,
         temperature: 0.4,

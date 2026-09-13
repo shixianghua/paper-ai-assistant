@@ -30,7 +30,20 @@ import {
 } from "../data/catalog"
 import { docWordCount, uid } from "../lib/generator"
 import { smartFullDoc, smartOutline } from "../lib/engine"
-import { EFFORT_OPTIONS, MODEL_OPTIONS, getDsEffort, getDsKey, getDsModel, modelLabel, saveDsConfig, testDsConnection } from "../lib/deepseek"
+import { EFFORT_OPTIONS, MODEL_OPTIONS, getDsBase, getDsEffort, getDsKey, getDsModel, listModels, modelLabel, saveDsConfig, testDsConnection } from "../lib/deepseek"
+import {
+  PAPER_FORMATS,
+  blockHeadLabel,
+  buildPaperHtml as buildPaperDocHtml,
+  chapterLabel,
+  figLabel,
+  formatSpecSummary,
+  getPaperFormat,
+  isOucFormat,
+  packWordMhtml,
+  savePaperFormat,
+  tableLabel,
+} from "../lib/format"
 import {
   addRecord,
   clearSession,
@@ -110,7 +123,7 @@ async function svgToPng(svgEl) {
     ctx.fillStyle = "#ffffff"
     ctx.fillRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL("image/png")
+    return { dataUrl: canvas.toDataURL("image/png"), w: canvas.width, h: canvas.height }
   } catch {
     return null
   }
@@ -127,92 +140,34 @@ async function replaceAsync(str, re, fn) {
     matches.push(args)
     return args[0]
   })
-  const replaced = await Promise.all(matches.map((m) => fn(m[0], m[1])))
+  const replaced = await Promise.all(matches.map((m) => fn(...m)))
   return str.replace(re, () => replaced.shift())
 }
 
-async function buildPaperHtml(doc) {
-  let chartNo = 0
-  const renderBlocks = (blocks) =>
-    (blocks || [])
-      .map((b) => {
-        if (b.kind === "h4") return `<h3>${b.text}</h3>`
-        if (b.kind === "p") return `<p>${b.text}</p>`
-        if (b.kind === "figure" && b.figure) {
-          const no = chartNo
-          chartNo += 1
-          return `<p class="tbl-title">图：${b.figure.title}</p><img class="chart" src="__CHART__${no}__" alt="${b.figure.title}"/>`
-        }
-        if (b.kind === "table" && b.table) {
-          const t = b.table
-          return `<p class="tbl-title">表：${t.title}</p><table border="1" cellspacing="0" cellpadding="5"><thead><tr>${t.headers
-            .map((h) => `<th>${h}</th>`)
-            .join("")}</tr></thead><tbody>${t.rows
-            .map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`)
-            .join("")}</tbody></table>`
-        }
-        return ""
-      })
-      .join("")
-
-  const body = `
-    <div class="cover">
-      <p class="cover-school">本科毕业论文（设计）</p>
-      <h1 class="cover-title">${doc.title}</h1>
-      <p class="cover-meta">${doc.metaLine.replace("· 演示版按规范结构输出精简篇幅", "")}</p>
-    </div>
-    <div style="page-break-before:always"></div>
-    <h2 class="decl">原创性声明</h2>
-    <p class="decl-text">本人郑重声明：所呈交的论文是本人在指导教师指导下独立完成的研究成果。除文中已经注明引用的内容外，本论文不包含任何其他个人或集体已经发表或撰写过的研究成果。演示版由系统自动生成，仅供格式与功能演示。</p>
-    <h2>摘 要</h2>
-    <p>${doc.abstract}</p>
-    <p class="kw">关键词：${(doc.keywords || []).join("；")}</p>
-    <h2>目 录</h2>
-    ${doc.sections.map((s) => `<p class="toc">${s.title}</p>`).join("")}
-    <div style="page-break-before:always"></div>
-    ${doc.sections
-      .map(
-        (s) =>
-          `<h2 class="chapter">${s.title}</h2>` +
-          renderBlocks(s.blocks) +
-          `<div style="page-break-before:always"></div>`,
-      )
-      .join("")}
-    <h2>参考文献</h2>
-    <ol class="refs">${doc.refs.map((r) => `<li>${r}</li>`).join("")}</ol>
-    <p class="note">${doc.refsNote}</p>
-    <h2>致 谢</h2><p>${doc.ack}</p>`
-  const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>
-    body{font-family:"Times New Roman","SimSun",serif;line-height:1.9;color:#111;font-size:14px}
-    h1{text-align:center;font-size:22px} h2{font-size:18px;margin:18px 0 10px}
-    h3{font-size:15px;margin:14px 0 6px} h4{font-size:14px;margin:12px 0 4px}
-    p{text-align:justify;text-indent:2em;margin:0 0 6px}
-    .cover{text-align:center;padding-top:80px}
-    .cover-school{font-size:22px;letter-spacing:4px}
-    .cover-title{font-size:26px;margin-top:60px;text-indent:0}
-    .cover-meta,.tbl-title,.note,.kw,.toc,.decl{text-indent:0}
-    .kw{font-weight:bold} .note{color:#666;font-size:12px}
-    .decl-text{text-indent:2em}
-    table{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:13px}
-    th,td{border:1px solid #333;padding:4px 8px;text-align:center}
-    .chart{width:100%;max-width:560px;height:auto;margin:6px 0 12px}
-    .chapter{page-break-before:always}
-    @page{size:A4;margin:2.54cm 3.17cm}
-  </style></head><body>${body}</body></html>`
-
+async function buildPaperHtml(doc, fmtKey) {
+  const html = buildPaperDocHtml(doc, fmtKey)
   const svgs = [...document.querySelectorAll(".paper figure svg")]
-  const finalHtml = await replaceAsync(html, /__CHART__(\d+)__/g, async (m, no) => {
+  const images = []
+  const out = await replaceAsync(html, /<img class="chart" src="__CHART__(\d+)__" alt="([^"]*)"\/>/g, async (m, no, alt) => {
     const svg = svgs[Number(no)]
     if (!svg) return ""
     const png = await svgToPng(svg)
-    return `<img class="chart" src="${png || svgDataImage(svg)}" alt="图表"/>`
+    if (!png) return `<img class="chart" src="${svgDataImage(svg)}" alt="${alt}"/>`
+    const name = `chart${images.length + 1}.png`
+    images.push({ name, dataUrl: png.dataUrl })
+    // Word 不支持 max-width / height:auto，且会忽略 img 的 style 宽度，
+    // 只认 width/height 属性（按 96dpi 像素换算），否则按图片原始像素放大到溢出页面。
+    const widthCm = 14
+    const heightCm = Math.max(3, Math.round(((widthCm * png.h) / png.w) * 10) / 10)
+    const px = 37.795
+    return `<img class="chart" width="${Math.round(widthCm * px)}" height="${Math.round(heightCm * px)}" src="${name}" alt="${alt}"/>`
   })
-  return finalHtml
+  return { html: out, images }
 }
 
-async function exportWord(doc) {
-  const html = await buildPaperHtml(doc)
-  const blob = new Blob(["\ufeff", html], { type: "application/msword" })
+async function exportWord(doc, fmtKey) {
+  const { html, images } = await buildPaperHtml(doc, fmtKey)
+  const blob = new Blob([packWordMhtml(html, images)], { type: "application/msword" })
   downloadBlob(blob, `${doc.title.replace(/[\\/:*?"<>|]/g, "_")}.doc`)
 }
 
@@ -322,13 +277,22 @@ function buildAuxDocs(doc, meta) {
   ]
 }
 
-async function exportPackage(doc, meta) {
+async function exportPackage(doc, meta, fmtKey) {
   const zip = new JSZip()
   const docs = buildAuxDocs(doc, meta)
-  const paperHtml = await buildPaperHtml(doc)
-  zip.file("1-论文（全文）.doc", `\ufeff${paperHtml}`)
+  const { html: paperHtml, images } = await buildPaperHtml(doc, fmtKey)
+  zip.file("1-论文（全文）.doc", packWordMhtml(paperHtml, images))
   docs.forEach((d, i) => zip.file(`${i + 2}-${d.name}.doc`, `\ufeff${d.html}`))
-  zip.file("材料清单.txt", "本压缩包包含：论文（全文）、开题报告、任务书、中期检查表。请按学校要求填写个人信息与签名后提交。")
+  zip.file(
+    "材料清单.txt",
+    [
+      "本压缩包包含：论文（全文）、开题报告、任务书、中期检查表。",
+      "请按学校要求填写个人信息与签名后提交。",
+      "",
+      "──────────── 本次采用的排版标准 ────────────",
+      formatSpecSummary(fmtKey),
+    ].join("\n"),
+  )
   const blob = await zip.generateAsync({ type: "blob" })
   downloadBlob(blob, `升格智能论文系统-全套材料-${doc.title.slice(0, 12)}.zip`)
 }
@@ -356,6 +320,10 @@ export default function Workspace() {
   const [dsEffort, setDsEffort] = useState(getDsEffort())
   const [dsTest, setDsTest] = useState(null)
   const [dsTesting, setDsTesting] = useState(false)
+  const [dsBase, setDsBase] = useState(getDsBase())
+  const [dsModelList, setDsModelList] = useState([])
+  const [dsListing, setDsListing] = useState(false)
+  const [paperFormat, setPaperFormat] = useState(getPaperFormat())
   const timers = useRef([])
   const cancelRef = useRef(null)
 
@@ -480,13 +448,13 @@ export default function Workspace() {
   const runTool = (key) => {
     if (!doc || docBusy) return
     if (key === "package") {
-      exportPackage(doc, meta)
+      exportPackage(doc, meta, paperFormat)
         .then(() => notify("全套材料已打包：论文、开题报告、任务书、中期检查表", "ok", 5200))
         .catch(() => notify("打包失败，请重试", "err"))
       return
     }
     if (key === "export") {
-      exportWord(doc)
+      exportWord(doc, paperFormat)
         .then(() => notify("Word 文档已开始下载（含图表）", "ok"))
         .catch(() => notify("导出失败，请重试", "err"))
       return
@@ -549,7 +517,7 @@ export default function Workspace() {
     { key: "rewrite", label: "无限改稿", desc: "按当前大纲重新润色全文", icon: RefreshCw },
     { key: "aigc", label: "降 AIGC 痕迹", desc: "弱化模板化表达", icon: Wand2 },
     { key: "reduce", label: "一键降重", desc: "同义改写与结构微调", icon: ScanSearch },
-    { key: "layout", label: "智能排版", desc: "A4 学术模板 · GB/T 7714", icon: LayoutTemplate },
+    { key: "layout", label: "智能排版", desc: "按所选标准排版 · GB/T 7714", icon: LayoutTemplate },
     { key: "ppt", label: "生成答辩 PPT", desc: "演示版暂未开放", icon: MonitorPlay },
     { key: "package", label: "全套材料打包", desc: "论文+开题+任务书+中期检查表", icon: FolderArchive },
     { key: "export", label: "导出 Word", desc: "原生 .doc 文件下载", icon: FileDown },
@@ -689,6 +657,28 @@ export default function Workspace() {
                     ))}
                   </select>
                 </div>
+                <div className="field">
+                  <label htmlFor="paper-format">排版格式标准</label>
+                  <select
+                    id="paper-format"
+                    className="select"
+                    value={paperFormat}
+                    onChange={(e) => {
+                      setPaperFormat(e.target.value)
+                      savePaperFormat(e.target.value)
+                      notify(`排版标准已切换为：${PAPER_FORMATS.find((f) => f.key === e.target.value)?.label}`, "ok", 3600)
+                    }}
+                  >
+                    {PAPER_FORMATS.map((f) => (
+                      <option key={f.key} value={f.key}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </select>
+                  <small style={{ color: "var(--ink-400)", fontSize: 11.5, lineHeight: 1.6 }}>
+                    {PAPER_FORMATS.find((f) => f.key === paperFormat)?.desc}
+                  </small>
+                </div>
                 <button className="btn btn-primary btn-block" onClick={genOutline} disabled={outlineBusy}>
                   {outlineBusy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
                   {outlineBusy ? "生成大纲中…" : "免费生成大纲"}
@@ -803,45 +793,53 @@ export default function Workspace() {
           <div className="paper-wrap">
             {doc ? (
               <>
-                <div className="paper">
+                <div className={`paper fmt-${paperFormat}`}>
                   <h1 className="paper-title">{doc.title}</h1>
                   <div className="meta-line">{doc.metaLine}</div>
+                  <div className="fmt-banner">
+                    {PAPER_FORMATS.find((f) => f.key === paperFormat)?.label} · 预览排版与此一致，导出 Word 后即为该格式
+                  </div>
                   <div className="abstract">
                     <b>摘要</b>
                     <p>{doc.abstract}</p>
                     <p style={{ marginTop: 10, color: "#666", fontSize: 13, fontWeight: 700 }}>
-                      关键词：{(doc.keywords || []).join("；")}
+                      关键词：{(doc.keywords || []).join(isOucFormat(paperFormat) ? "　" : "；")}
                     </p>
                   </div>
                   <div className="paper-toc">
                     <h3>目录</h3>
                     {doc.toc.map((t) => (
                       <div className="toc-row" key={t.id}>
-                        {t.title}
+                        {chapterLabel(doc.toc.indexOf(t), t.title, paperFormat)}
                       </div>
                     ))}
                   </div>
-                  {doc.sections.map((s) => (
-                    <section key={s.id}>
-                      <h3>{s.title}</h3>
-                      {(s.blocks || []).map((b, bi) => {
-                        if (b.kind === "h4") return <h4 key={bi}>{b.text}</h4>
-                        if (b.kind === "p") return <p key={bi}>{b.text}</p>
-                        if (b.kind === "figure" && b.figure) {
-                          return (
-                            <figure className="paper-figure" key={bi}>
-                              <div className="figure-title">{b.figure.title}</div>
-                              <div
-                                className="figure-svg"
-                                dangerouslySetInnerHTML={{ __html: b.figure.svg }}
-                              />
-                            </figure>
-                          )
-                        }
-                        if (b.kind === "table" && b.table) {
-                          return (
-                            <div className="paper-table" key={bi}>
-                              <div className="table-title">{b.table.title}</div>
+                  {(() => {
+                    let figNo = 0
+                    let tblNo = 0
+                    return doc.sections.map((s, si) => (
+                      <section key={s.id}>
+                        <h3>{chapterLabel(si, s.title, paperFormat)}</h3>
+                        {(s.blocks || []).map((b, bi) => {
+                          if (b.kind === "h4") return <h4 key={bi}>{blockHeadLabel(b.text, paperFormat)}</h4>
+                          if (b.kind === "p") return <p key={bi}>{b.text}</p>
+                          if (b.kind === "figure" && b.figure) {
+                            figNo += 1
+                            return (
+                              <figure className="paper-figure" key={bi}>
+                                <div
+                                  className="figure-svg"
+                                  dangerouslySetInnerHTML={{ __html: b.figure.svg }}
+                                />
+                                <figcaption className="figure-title">{figLabel(figNo, b.figure.title, paperFormat)}</figcaption>
+                              </figure>
+                            )
+                          }
+                          if (b.kind === "table" && b.table) {
+                            tblNo += 1
+                            return (
+                              <div className="paper-table" key={bi}>
+                                <div className="table-title">{tableLabel(tblNo, b.table.title, paperFormat)}</div>
                               <table>
                                 <thead>
                                   <tr>
@@ -860,20 +858,31 @@ export default function Workspace() {
                                   ))}
                                 </tbody>
                               </table>
-                              {b.demo && <div className="demo-note">示例数据，正式版以真实调研/测试结果回填</div>}
-                            </div>
-                          )
-                        }
-                        return null
-                      })}
-                    </section>
-                  ))}
+                                {b.demo && <div className="demo-note">示例数据，正式版以真实调研/测试结果回填</div>}
+                              </div>
+                            )
+                          }
+                          return null
+                        })}
+                      </section>
+                    ))
+                  })()}
                   <h3>参考文献</h3>
-                  <ol className="refs">
-                    {doc.refs.map((r) => (
-                      <li key={r}>{r}</li>
-                    ))}
-                  </ol>
+                  {isOucFormat(paperFormat) ? (
+                    <div className="refs">
+                      {doc.refs.map((r, ri) => (
+                        <p className="ref-line" key={r}>
+                          [{ri + 1}] {r}
+                        </p>
+                      ))}
+                    </div>
+                  ) : (
+                    <ol className="refs">
+                      {doc.refs.map((r) => (
+                        <li key={r}>{r}</li>
+                      ))}
+                    </ol>
+                  )}
                   <p style={{ fontSize: 12.5, color: "#999", marginTop: 10 }}>{doc.refsNote}</p>
                   <h3>致谢</h3>
                   <p>{doc.ack}</p>
@@ -1036,6 +1045,52 @@ export default function Workspace() {
                   {EFFORT_OPTIONS.find((m) => m.value === dsEffort)?.desc}
                 </small>
               </div>
+              <div className="field">
+                <label htmlFor="ds-base">接口地址（高级设置）</label>
+                <input
+                  id="ds-base"
+                  className="input"
+                  value={dsBase}
+                  onChange={(e) => setDsBase(e.target.value)}
+                  placeholder="https://api.deepseek.com"
+                  autoComplete="off"
+                />
+                <small style={{ color: "var(--ink-400)", fontSize: 11.5, lineHeight: 1.6 }}>
+                  默认调用 DeepSeek 官方接口。若你另有服务商网关（例如提供 V4.1 版本），把它的地址填在这里即可整体切换。
+                </small>
+              </div>
+              <button
+                type="button"
+                className="btn btn-outline btn-block btn-sm"
+                disabled={dsListing}
+                onClick={async () => {
+                  saveDsConfig({ key: dsKey, model: dsModel, effort: dsEffort, base: dsBase })
+                  setDsListing(true)
+                  const list = await listModels()
+                  setDsModelList(list)
+                  setDsListing(false)
+                  if (!list.length) notify("该接口未返回模型列表，请检查地址与 Key", "err", 6000)
+                }}
+              >
+                {dsListing ? "正在检测…" : "检测该接口实际可用的模型"}
+              </button>
+              {dsModelList.length > 0 && (
+                <div
+                  style={{
+                    background: "var(--indigo-50, #eef2ff)",
+                    border: "1px solid var(--indigo-100, #e0e7ff)",
+                    borderRadius: 10,
+                    padding: "9px 12px",
+                    fontSize: 12,
+                    lineHeight: 1.7,
+                    color: "var(--ink-500)",
+                  }}
+                >
+                  接口返回的可用模型：<b>{dsModelList.join("、")}</b>
+                  <br />
+                  若这里没有“V4.1 Flash”，说明该服务商尚未提供该版本；等其上线后重新检测即可直接使用。
+                </div>
+              )}
               <div
                 style={{
                   background: "var(--indigo-50, #eef2ff)",
@@ -1069,7 +1124,7 @@ export default function Workspace() {
               <button
                 className="btn btn-primary btn-block"
                 onClick={() => {
-                  saveDsConfig({ key: dsKey, model: dsModel, effort: dsEffort })
+                  saveDsConfig({ key: dsKey, model: dsModel, effort: dsEffort, base: dsBase })
                   setShowDs(false)
                   notify(
                     dsKey

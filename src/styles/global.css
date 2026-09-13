@@ -2316,6 +2316,114 @@ ol {
   line-height: 1.55;
 }
 
+/* ---------- 国开格式预览（与 Word 导出保持一致） ---------- */
+.fmt-banner {
+  margin: 14px 0 22px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--grad-brand-soft);
+  border: 1px solid #e3e6fb;
+  color: var(--brand-700);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.2px;
+}
+
+.paper.fmt-ouc-bachelor,
+.paper.fmt-ouc-degree {
+  padding: 66px 72px;
+}
+
+.paper.fmt-ouc-bachelor .paper-title,
+.paper.fmt-ouc-degree .paper-title {
+  font-family: "SimHei", var(--font-sans);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.paper.fmt-ouc-bachelor .paper-title {
+  font-size: 25px;
+}
+.paper.fmt-ouc-degree .paper-title {
+  font-size: 25px;
+}
+
+.paper.fmt-ouc-bachelor h3,
+.paper.fmt-ouc-degree h3 {
+  font-family: "SimHei", var(--font-sans);
+  font-size: 17px;
+  margin: 30px 0 12px;
+  letter-spacing: 1px;
+}
+.paper.fmt-ouc-degree h3 {
+  font-size: 20px;
+  text-align: left;
+  margin: 30px 0 20px;
+}
+
+.paper.fmt-ouc-bachelor h4,
+.paper.fmt-ouc-degree h4 {
+  font-family: "SimHei", var(--font-sans);
+  font-size: 15.5px;
+  font-weight: 700;
+  margin: 18px 0 8px;
+}
+.paper.fmt-ouc-degree h4 {
+  font-size: 15px;
+  margin: 16px 0 16px;
+}
+
+.paper.fmt-ouc-bachelor p,
+.paper.fmt-ouc-degree p {
+  font-size: 15.5px;
+  line-height: 2.0;
+}
+.paper.fmt-ouc-bachelor p {
+  line-height: 2.2;
+}
+
+.paper.fmt-ouc-bachelor .paper-toc h3,
+.paper.fmt-ouc-degree .paper-toc h3,
+.paper.fmt-ouc-bachelor .abstract b,
+.paper.fmt-ouc-degree .abstract b {
+  font-family: "SimHei", var(--font-sans);
+  letter-spacing: 4px;
+  font-size: 18px;
+  display: block;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.paper.fmt-ouc-bachelor .toc-row,
+.paper.fmt-ouc-degree .toc-row {
+  font-family: "SimHei", var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 400;
+}
+
+.paper .ref-line {
+  margin: 0 0 6px;
+  padding-left: 2em;
+  text-indent: -2em;
+  font-size: 14.5px;
+  line-height: 1.9;
+  text-align: left;
+}
+
+.paper.fmt-ouc-bachelor .figure-title,
+.paper.fmt-ouc-degree .figure-title {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #333;
+  text-align: center;
+}
+.paper.fmt-ouc-bachelor .table-title,
+.paper.fmt-ouc-degree .table-title {
+  font-size: 13px;
+  text-align: center;
+  font-weight: 700;
+}
+
 .paper .meta-line {
   text-align: center;
   color: #666;
