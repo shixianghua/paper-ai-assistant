@@ -99,6 +99,16 @@ try {
 
         case 'notify': {
             $provider = param($in, 'provider', PAY_PROVIDER);
+            if ($provider === 'alipay') {
+                $publicKey = alipay_key(ALIPAY_PUBLIC_KEY, ALIPAY_PUBLIC_KEY_PATH, 'PUBLIC');
+                if ($publicKey !== '' && alipay_verify($in, trim($publicKey))) {
+                    if (in_array(param($in, 'trade_status'), ['TRADE_SUCCESS', 'TRADE_FINISHED'], true)) {
+                        credit_order(param($in, 'out_trade_no'), param($in, 'trade_no'), '支付宝回调自动核销');
+                    }
+                }
+                echo 'success';
+                exit;
+            }
             if ($provider === 'epay') {
                 $sign = param($in, 'sign');
                 $calc = epay_sign($in, EPAY_KEY);

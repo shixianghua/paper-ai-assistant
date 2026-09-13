@@ -381,6 +381,7 @@ function PayModal({ plan, onClose }) {
   const { user, backend, token } = useStore()
   const [orderNo, setOrderNo] = useState(makeOrderNo)
   const [auto, setAuto] = useState(false)
+  const [provider, setProvider] = useState("")
   const [qr, setQr] = useState("")
   const [status, setStatus] = useState("idle") // idle | waiting | paid
   const [left, setLeft] = useState(null)
@@ -401,6 +402,7 @@ function PayModal({ plan, onClose }) {
         setOrderNo(d.order_no)
         if (d.auto && d.pay_url) {
           setAuto(true)
+          setProvider(d.provider || "")
           setStatus("waiting")
           const png = await QRCodeLib.toDataURL(d.pay_url, { width: 340, margin: 1, errorCorrectionLevel: "M" })
           if (alive) setQr(png)
@@ -438,7 +440,9 @@ function PayModal({ plan, onClose }) {
     }
   }, [auto, token, orderNo, status])
 
-  const orderText = `升格智能论文系统｜订单号：${orderNo}｜套餐：${plan.label}（任写 ${plan.count} 篇）｜金额：¥${plan.price}｜支付方式：微信扫码`
+  const payName = provider === "alipay" ? "支付宝" : provider === "wechat" || provider === "" ? "微信" : "手机"
+  const payTitle = auto ? `${payName}扫码支付（自动到账）` : "微信扫码支付"
+  const orderText = `升格智能论文系统｜订单号：${orderNo}｜套餐：${plan.label}（任写 ${plan.count} 篇）｜金额：¥${plan.price}｜支付方式：${payName}扫码`
 
   const finish = async () => {
     saveOrder({ orderNo, plan: plan.label, count: plan.count, amount: plan.price, time: new Date().toISOString() })
@@ -457,7 +461,7 @@ function PayModal({ plan, onClose }) {
     <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="modal-card pay-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{auto ? "微信扫码支付（自动到账）" : "微信扫码支付"}</h3>
+          <h3>{payTitle}</h3>
           <button className="modal-close" onClick={onClose} aria-label="关闭">
             ×
           </button>
@@ -474,7 +478,7 @@ function PayModal({ plan, onClose }) {
         {auto ? (
           <>
             <ol className="pay-steps">
-              <li>打开微信扫一扫，扫描上方二维码</li>
+              <li>打开 {payName} 扫一扫，扫描上方二维码</li>
               <li>
                 支付 <b>¥{plan.price}</b>（订单号 {orderNo} 已带入，无需手动备注）
               </li>

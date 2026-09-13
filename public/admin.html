@@ -185,6 +185,8 @@
                   ? "易支付（自动到账）"
                   : pay.provider === "wechat"
                     ? "微信支付 Native（自动到账）"
+                    : pay.provider === "alipay"
+                      ? "支付宝当面付（自动到账）"
                     : pay.provider === "mock"
                       ? "测试通道 mock（8 秒自动到账）"
                       : pay.provider || "未配置"

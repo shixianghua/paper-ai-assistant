@@ -33,6 +33,118 @@ function http_json(string $url, ?array $payload = null, array $headers = [], str
     return ['ok' => $code >= 200 && $code < 300, 'status' => $code, 'data' => is_array($json) ? $json : [], 'raw' => $body];
 }
 
+/** 表单方式 POST（支付宝网关要求 application/x-www-form-urlencoded） */
+function http_form(string $url, array $params): array
+{
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($params),
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $body = curl_exec($ch);
+    $err = curl_error($ch);
+    $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($body === false) {
+        return ['ok' => false, 'error' => $err ?: '网络请求失败'];
+    }
+    $json = json_decode($body, true);
+    return ['ok' => $code >= 200 && $code < 300, 'status' => $code, 'data' => is_array($json) ? $json : [], 'raw' => $body];
+}
+
+/* ---------------- 支付宝当面付 ---------------- */
+
+function alipay_key(string $inline, string $path, string $type): string
+{
+    $key = trim($inline);
+    if ($key === '' && is_file($path)) {
+        $key = trim((string) file_get_contents($path));
+    }
+    if ($key === '') {
+        return '';
+    }
+    if (strpos($key, '-----BEGIN') === false) {
+        $body = chunk_split(preg_replace('/\s+/', '', $key), 64, "\n");
+        $key = "-----BEGIN {$type} KEY-----\n" . $body . "-----END {$type} KEY-----\n";
+    }
+    return $key;
+}
+
+function alipay_sign(array $params, string $privateKey): string
+{
+    ksort($params);
+    $pairs = [];
+    foreach ($params as $k => $v) {
+        if ($v === '' || $k === 'sign' || $k === 'sign_type') {
+            continue;
+        }
+        $pairs[] = $k . '=' . $v;
+    }
+    $content = implode('&', $pairs);
+    $res = openssl_sign($content, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+    return $res ? base64_encode($signature) : '';
+}
+
+function alipay_verify(array $params, string $publicKey): bool
+{
+    if (empty($params['sign'])) {
+        return false;
+    }
+    $sign = $params['sign'];
+    unset($params['sign'], $params['sign_type']);
+    ksort($params);
+    $pairs = [];
+    foreach ($params as $k => $v) {
+        if ($v === '' || is_array($v)) {
+            continue;
+        }
+        $pairs[] = $k . '=' . $v;
+    }
+    return openssl_verify(implode('&', $pairs), base64_decode($sign), $publicKey, OPENSSL_ALGO_SHA256) === 1;
+}
+
+/** 调用支付宝开放平台接口 */
+function alipay_request(string $method, array $bizContent, string $notifyUrl = ''): array
+{
+    $privateKey = alipay_key(ALIPAY_PRIVATE_KEY, ALIPAY_PRIVATE_KEY_PATH, 'PRIVATE');
+    if (ALIPAY_APPID === '' || $privateKey === '') {
+        return ['ok' => false, 'error' => '支付宝 APPID 或应用私钥未配置'];
+    }
+    $params = [
+        'app_id' => ALIPAY_APPID,
+        'method' => $method,
+        'format' => 'JSON',
+        'charset' => 'utf-8',
+        'sign_type' => 'RSA2',
+        'timestamp' => date('Y-m-d H:i:s'),
+        'version' => '1.0',
+        'biz_content' => json_encode($bizContent, JSON_UNESCAPED_UNICODE),
+    ];
+    if ($notifyUrl !== '') {
+        $params['notify_url'] = $notifyUrl;
+    }
+    $params['sign'] = alipay_sign($params, $privateKey);
+    if ($params['sign'] === '') {
+        return ['ok' => false, 'error' => '支付宝签名失败，请检查应用私钥'];
+    }
+    $res = http_form(ALIPAY_GATEWAY, $params);
+    if (!$res['ok']) {
+        return ['ok' => false, 'error' => $res['error'] ?? '支付宝网关不可达'];
+    }
+    $node = str_replace('.', '_', $method) . '_response';
+    $data = $res['data'][$node] ?? null;
+    if (!is_array($data)) {
+        return ['ok' => false, 'error' => '支付宝返回格式异常', 'raw' => substr((string) $res['raw'], 0, 300)];
+    }
+    if (($data['code'] ?? '') !== '10000') {
+        return ['ok' => false, 'error' => ($data['sub_msg'] ?? $data['msg'] ?? '支付宝接口返回错误'), 'code' => $data['code'] ?? ''];
+    }
+    return ['ok' => true, 'data' => $data];
+}
+
 /* ---------------- 自动发放（核心） ---------------- */
 
 function credit_order(string $orderNo, string $tradeNo = '', string $note = ''): array
@@ -147,6 +259,23 @@ function provider_create(array $order): array
         return ['ok' => true, 'pay_url' => $res['data']['code_url'], 'provider' => 'wechat'];
     }
 
+    if ($provider === 'alipay') {
+        $res = alipay_request(
+            'alipay.trade.precreate',
+            [
+                'out_trade_no' => $orderNo,
+                'total_amount' => $amount,
+                'subject' => $subject,
+                'timeout_express' => '15m',
+            ],
+            SITE_URL . '/api/pay.php?action=notify&provider=alipay'
+        );
+        if (!$res['ok']) {
+            return ['ok' => false, 'error' => '支付宝下单失败：' . $res['error']];
+        }
+        return ['ok' => true, 'pay_url' => $res['data']['qr_code'] ?? '', 'provider' => 'alipay'];
+    }
+
     return ['ok' => false, 'error' => '未配置自动支付通道'];
 }
 
@@ -190,6 +319,24 @@ function provider_query(array $order): array
         }
         $state = $res['data']['trade_state'] ?? '';
         return ['ok' => true, 'paid' => $state === 'SUCCESS', 'trade_no' => (string) ($res['data']['transaction_id'] ?? '')];
+    }
+
+    if ($provider === 'alipay') {
+        $res = alipay_request('alipay.trade.query', ['out_trade_no' => $orderNo]);
+        if (!$res['ok']) {
+            // 交易不存在（用户还没扫码）不算错误
+            if (($res['code'] ?? '') === '40004') {
+                return ['ok' => true, 'paid' => false];
+            }
+            return ['ok' => false, 'error' => $res['error']];
+        }
+        $d = $res['data'];
+        $status = (string) ($d['trade_status'] ?? '');
+        return [
+            'ok' => true,
+            'paid' => in_array($status, ['TRADE_SUCCESS', 'TRADE_FINISHED'], true),
+            'trade_no' => (string) ($d['trade_no'] ?? ''),
+        ];
     }
 
     return ['ok' => true, 'paid' => false];
