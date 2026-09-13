@@ -412,7 +412,7 @@ function PayModal({ plan, onClose }) {
           {plan.label} · 任写 {plan.count} 篇 · 应付 <b style={{ color: "var(--brand-600, #4f46e5)" }}>¥{plan.price}</b>
           <span style={{ color: "var(--ink-400)" }}>（原价 ¥{plan.original}）</span>
         </p>
-        <img className="pay-qr" src="./wechat-pay.png" alt="微信收款码" />
+        <img className="pay-qr" src="./qr-code.png" alt="微信收款码" />
         <ol className="pay-steps">
           <li>打开微信 → 右上角「+」→ 扫一扫，扫描上方收款码</li>
           <li>
