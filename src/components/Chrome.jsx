@@ -167,7 +167,7 @@ export function AccountModal({ onClose }) {
         </div>
 
         <div className="acct-section">
-          <div className="acct-title">使用明细（生成全文时扣减 1 篇）</div>
+          <div className="acct-title">使用明细（生成全文时扣减 1 篇 · 云端保留 7 天）</div>
           {usage.length ? (
             <table className="acct-table">
               <thead>

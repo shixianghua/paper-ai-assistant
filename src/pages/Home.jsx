@@ -3,7 +3,6 @@ import GeneratorPanel from "../components/GeneratorPanel"
 import {
   CtaBand,
   DocTypes,
-  Ecosystem,
   FaqSection,
   FlowSteps,
   Hero,
@@ -42,7 +41,6 @@ export default function Home() {
         <HistorySection />
         <Pricing />
         <StatementSection />
-        <Ecosystem />
         <FaqSection />
         <CtaBand />
       </main>

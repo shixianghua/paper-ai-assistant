@@ -3396,6 +3396,24 @@ ol {
 }
 
 /* ---------- 学术诚信与使用声明 ---------- */
+.retention-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 6px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: #fffaf0;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.retention-note b {
+  color: #b45309;
+}
+
 .statement-wrap {
   display: grid;
   grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);

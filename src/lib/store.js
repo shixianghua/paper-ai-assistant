@@ -6,6 +6,28 @@ const LS_RECORDS = "sg.records"
 const LS_ACCOUNTS = "sg.accounts"
 const LS_TOKEN = "sg.token"
 
+/* 云端保留策略：写作记录与生成内容只保留 7 天，到期自动删除 */
+export const RETENTION_DAYS = 7
+const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000
+
+function notExpired(rec) {
+  const t = new Date(rec?.time || 0).getTime()
+  return Number.isFinite(t) && Date.now() - t < RETENTION_MS
+}
+
+function purgeExpiredRecords(list) {
+  if (!Array.isArray(list)) return []
+  const kept = list.filter(notExpired)
+  if (kept.length !== list.length) {
+    try {
+      localStorage.setItem(LS_RECORDS, JSON.stringify(kept))
+    } catch {
+      /* 忽略 */
+    }
+  }
+  return kept
+}
+
 function read(key, fallback) {
   try {
     const raw = localStorage.getItem(key)
@@ -35,7 +57,7 @@ function seedRecords() {
 
 let snapshot = {
   user: read(LS_USER, null),
-  records: read(LS_RECORDS, null) || seedRecords(),
+  records: purgeExpiredRecords(read(LS_RECORDS, null) || seedRecords()),
   sessionDoc: null,
   sessionOutline: null,
   sessionMeta: null,
@@ -300,10 +322,20 @@ export function clearSession() {
 }
 
 export function addRecord(rec) {
-  const next = [rec, ...snapshot.records]
+  const next = purgeExpiredRecords([rec, ...snapshot.records])
   snapshot = { ...snapshot, records: next }
   localStorage.setItem(LS_RECORDS, JSON.stringify(next))
   emit()
+}
+
+/** 手动触发一次过期清理（页面加载 / 打开记录区时调用） */
+export function purgeExpired() {
+  const next = purgeExpiredRecords(snapshot.records)
+  if (next.length !== snapshot.records.length) {
+    snapshot = { ...snapshot, records: next }
+    emit()
+  }
+  return next.length
 }
 
 export function removeRecord(id) {

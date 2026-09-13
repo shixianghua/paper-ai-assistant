@@ -13,6 +13,7 @@ import {
   FileText,
   Gift,
   Globe,
+  Info,
   ListTree,
   PenLine,
   Plug,
@@ -321,12 +322,21 @@ export function HistorySection() {
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 800, color: "var(--ink-900)" }}>我的写作记录</h2>
               <p style={{ marginTop: 6, color: "var(--ink-500)", fontSize: 14.5, fontWeight: 600 }}>
-                永久云端记录 · 隐私隔离 · 随时继续上次写作
+                云端仅保留 7 天 · 到期自动删除 · 隐私隔离
               </p>
             </div>
             <Link className="btn btn-outline" to="/workspace">
               新建文档 <ArrowRight size={15} />
             </Link>
+          </div>
+        </Reveal>
+        <Reveal delay={60}>
+          <div className="retention-note">
+            <Info size={14} />
+            <span>
+              写作记录与生成内容在云端<b>只保留 7 天</b>，第 8 天自动删除；如需长期保存，请在生成后及时导出
+              Word 到本地（已下载到本地的文件不受影响）。
+            </span>
           </div>
         </Reveal>
         <Reveal delay={100}>

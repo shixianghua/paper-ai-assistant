@@ -562,7 +562,7 @@ export default function Workspace() {
           <div className="ws-top-actions">
             {doc && (
               <span className="badge green" style={{ display: "inline-flex", gap: 6 }}>
-                <Check size={12} /> 已保存 · 约 {Math.round(totalWords / 100) / 10} 千字
+            <Check size={12} /> 已保存 · 约 {Math.round(totalWords / 100) / 10} 千字 · 云端保留 7 天，请及时导出
               </span>
             )}
             <button className="btn btn-outline btn-sm" onClick={resetAll}>

@@ -86,6 +86,7 @@ try {
                 }
             }
             maybe_poll_pending_orders(2);
+            purge_expired_records();
             $fresh = db()->prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
             $fresh->execute([$user['id']]);
             out([
