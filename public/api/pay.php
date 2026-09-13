@@ -156,6 +156,7 @@ try {
             $report['apiOk'] = $probe['ok'];
             $report['apiError'] = $probe['ok'] ? '' : $probe['error'];
             $report['apiCode'] = $probe['code'] ?? '';
+            $report['apiRaw'] = $probe['raw'] ?? '';
             $code = (string) ($report['apiCode'] ?: '');
             if ($probe['ok'] || $code === '40004') {
                 $report['result'] = '✅ 支付宝配置正常：密钥可用、接口权限正常（返回“交易不存在”属于预期）';

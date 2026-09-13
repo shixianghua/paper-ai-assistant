@@ -29,8 +29,24 @@ function http_json(string $url, ?array $payload = null, array $headers = [], str
     if ($body === false) {
         return ['ok' => false, 'error' => $err ?: '网络请求失败'];
     }
-    $json = json_decode($body, true);
+    $json = decode_json_body($body);
     return ['ok' => $code >= 200 && $code < 300, 'status' => $code, 'data' => is_array($json) ? $json : [], 'raw' => $body];
+}
+
+/** 解析 JSON；若响应为 GBK 中文（支付宝错误信息常见），先转 UTF-8 再解析 */
+function decode_json_body(string $body)
+{
+    $json = json_decode($body, true);
+    if ($json === null && $body !== '' && function_exists('mb_check_encoding') && !mb_check_encoding($body, 'UTF-8')) {
+        $utf8 = @mb_convert_encoding($body, 'UTF-8', 'GBK');
+        if ($utf8 !== false) {
+            $json = json_decode($utf8, true);
+        }
+    }
+    if ($json === null) {
+        $json = json_decode($body, true, 512, JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+    return $json;
 }
 
 /** 表单方式 POST（支付宝网关要求 application/x-www-form-urlencoded） */
@@ -51,7 +67,7 @@ function http_form(string $url, array $params): array
     if ($body === false) {
         return ['ok' => false, 'error' => $err ?: '网络请求失败'];
     }
-    $json = json_decode($body, true);
+    $json = decode_json_body($body);
     return ['ok' => $code >= 200 && $code < 300, 'status' => $code, 'data' => is_array($json) ? $json : [], 'raw' => $body];
 }
 
@@ -78,7 +94,8 @@ function alipay_sign(array $params, string $privateKey): string
     ksort($params);
     $pairs = [];
     foreach ($params as $k => $v) {
-        if ($v === '' || $k === 'sign' || $k === 'sign_type') {
+        // 只排除 sign 与空值；sign_type 需要参与签名（与支付宝官方 SDK 一致）
+        if ($v === '' || $k === 'sign') {
             continue;
         }
         $pairs[] = $k . '=' . $v;
@@ -140,7 +157,12 @@ function alipay_request(string $method, array $bizContent, string $notifyUrl = '
         return ['ok' => false, 'error' => '支付宝返回格式异常', 'raw' => substr((string) $res['raw'], 0, 300)];
     }
     if (($data['code'] ?? '') !== '10000') {
-        return ['ok' => false, 'error' => ($data['sub_msg'] ?? $data['msg'] ?? '支付宝接口返回错误'), 'code' => $data['code'] ?? ''];
+        return [
+            'ok' => false,
+            'error' => to_utf8((string) ($data['sub_msg'] ?? $data['msg'] ?? '支付宝接口返回错误')),
+            'code' => $data['code'] ?? '',
+            'sub_code' => $data['sub_code'] ?? '',
+        ];
     }
     return ['ok' => true, 'data' => $data];
 }
