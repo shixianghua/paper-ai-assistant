@@ -2056,6 +2056,63 @@ ol {
   font-size: 13px;
 }
 
+/* ---------- 微信扫码支付弹窗 ---------- */
+.pay-modal {
+  width: min(430px, 100%);
+}
+
+.pay-qr {
+  display: block;
+  width: min(268px, 82%);
+  margin: 6px auto 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 26px -14px rgba(16, 22, 70, 0.35);
+}
+
+.pay-steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-600, #3c4463);
+  line-height: 1.7;
+}
+
+.pay-steps li::marker {
+  color: var(--brand-600, #4f46e5);
+  font-weight: 800;
+}
+
+.pay-order {
+  border-radius: 12px;
+  background: var(--indigo-50, #eef2ff);
+  border: 1px solid var(--indigo-100, #e0e7ff);
+  padding: 9px 12px;
+  font-size: 12.5px;
+  color: var(--ink-600, #3c4463);
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.pay-order b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.5px;
+  color: var(--brand-700, #4338ca);
+}
+
+.pay-done {
+  border-radius: 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
 /* ---------- Toast ---------- */
 .toast-wrap {
   position: fixed;

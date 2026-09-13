@@ -14,10 +14,10 @@ import {
 import { Footer, LoginModal, Navbar, Reveal, ToastHost } from "../components/Chrome"
 
 export default function Home() {
-  const [login, setLogin] = useState(false)
+  const [login, setLogin] = useState(null) // null | "login" | "register"
   return (
     <>
-      <Navbar onLogin={() => setLogin(true)} />
+        <Navbar onLogin={(mode) => setLogin(mode || "login")} />
       <main>
         <Hero />
         <DocTypes />
@@ -45,7 +45,7 @@ export default function Home() {
         <CtaBand />
       </main>
       <Footer />
-      {login && <LoginModal mode="login" onClose={() => setLogin(false)} />}
+      {login && <LoginModal mode={login} onClose={() => setLogin(null)} />}
       <ToastHost />
     </>
   )

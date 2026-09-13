@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react"
 
 const LS_USER = "sg.user"
 const LS_RECORDS = "sg.records"
+const LS_ACCOUNTS = "sg.accounts"
 
 function read(key, fallback) {
   try {
@@ -59,13 +60,76 @@ export function useStore() {
   return useSyncExternalStore(subscribe, getState)
 }
 
-export function loginDemo(phone) {
-  snapshot = {
-    ...snapshot,
-    user: { phone, name: phone ? `用户 ${phone.slice(-4)}` : "演示用户", since: Date.now() },
+/* ---------- 手机号账号（演示版：账号仅保存在本浏览器，不需要短信验证码） ---------- */
+
+export function isValidPhone(phone) {
+  return /^1\d{10}$/.test(String(phone || "").trim())
+}
+export function maskPhone(phone) {
+  const p = String(phone || "")
+  return p.length === 11 ? `${p.slice(0, 3)}****${p.slice(-4)}` : p
+}
+
+// 演示版只做不可逆混淆，避免明文存储；这不是加密，请勿使用重要密码
+function hashPassword(pw) {
+  let h = 5381
+  const s = `sg|${String(pw ?? "")}`
+  for (let i = 0; i < s.length; i += 1) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+  return `h${(h >>> 0).toString(36)}`
+}
+
+function readAccounts() {
+  try {
+    const list = JSON.parse(localStorage.getItem(LS_ACCOUNTS) || "[]")
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
   }
-  localStorage.setItem(LS_USER, JSON.stringify(snapshot.user))
+}
+
+function writeAccounts(list) {
+  try {
+    localStorage.setItem(LS_ACCOUNTS, JSON.stringify(list))
+  } catch {
+    /* 隐私模式下写入失败，忽略 */
+  }
+}
+
+function setUser(user) {
+  snapshot = { ...snapshot, user }
+  try {
+    localStorage.setItem(LS_USER, JSON.stringify(user))
+  } catch {
+    /* 忽略 */
+  }
   emit()
+}
+
+export function registerAccount(phone, password) {
+  const tel = String(phone || "").trim()
+  if (!isValidPhone(tel)) return { ok: false, error: "请输入 11 位手机号（以 1 开头）" }
+  if (String(password || "").length < 6) return { ok: false, error: "密码至少 6 位" }
+  const list = readAccounts()
+  if (list.some((a) => a.phone === tel)) return { ok: false, error: "该手机号已注册，请直接登录" }
+  const user = { phone: tel, name: `用户 ${tel.slice(-4)}`, since: Date.now() }
+  writeAccounts([...list, { ...user, pass: hashPassword(password) }])
+  setUser(user)
+  return { ok: true, user }
+}
+
+export function loginWithPassword(phone, password) {
+  const tel = String(phone || "").trim()
+  if (!isValidPhone(tel)) return { ok: false, error: "请输入 11 位手机号（以 1 开头）" }
+  const hit = readAccounts().find((a) => a.phone === tel)
+  if (!hit) return { ok: false, error: "该手机号尚未注册，请先注册" }
+  if (hit.pass !== hashPassword(password)) return { ok: false, error: "手机号或密码不正确" }
+  setUser({ phone: hit.phone, name: hit.name || `用户 ${hit.phone.slice(-4)}`, since: Date.now() })
+  return { ok: true }
+}
+
+export function loginDemo(phone) {
+  const tel = isValidPhone(phone) ? String(phone).trim() : "13800000000"
+  setUser({ phone: tel, name: `用户 ${tel.slice(-4)}`, since: Date.now(), demo: true })
 }
 
 export function logout() {

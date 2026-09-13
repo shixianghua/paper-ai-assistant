@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   ArrowRight,
@@ -336,9 +336,125 @@ export function HistorySection() {
 }
 
 /* ---------- Pricing ---------- */
+
+const LS_ORDERS = "sg.orders"
+
+function makeOrderNo() {
+  const t = Date.now().toString(36).toUpperCase().slice(-6)
+  const r = Math.random().toString(36).toUpperCase().slice(2, 5)
+  return `SG${t}${r}`
+}
+
+function saveOrder(order) {
+  try {
+    const list = JSON.parse(localStorage.getItem(LS_ORDERS) || "[]")
+    localStorage.setItem(LS_ORDERS, JSON.stringify([order, ...(Array.isArray(list) ? list : [])].slice(0, 50)))
+  } catch {
+    /* 隐私模式下忽略 */
+  }
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    try {
+      const ta = document.createElement("textarea")
+      ta.value = text
+      ta.style.position = "fixed"
+      ta.style.opacity = "0"
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand("copy")
+      document.body.removeChild(ta)
+      return ok
+    } catch {
+      return false
+    }
+  }
+}
+
+function PayModal({ plan, onClose }) {
+  const [orderNo] = useState(makeOrderNo)
+  const [paid, setPaid] = useState(false)
+
+  useEffect(() => {
+    document.body.classList.add("no-scroll")
+    return () => document.body.classList.remove("no-scroll")
+  }, [])
+
+  const orderText = `升格智能论文系统｜订单号：${orderNo}｜套餐：${plan.label}（任写 ${plan.count} 篇）｜金额：¥${plan.price}｜支付方式：微信扫码`
+
+  const finish = async () => {
+    saveOrder({ orderNo, plan: plan.label, count: plan.count, amount: plan.price, time: new Date().toISOString() })
+    setPaid(true)
+    const ok = await copyText(orderText)
+    notify(
+      ok
+        ? "订单已登记，订单信息已复制：请把「支付截图 + 订单号」发给管理员开通"
+        : `订单已登记：${orderNo}，请把订单号与支付截图发给管理员开通`,
+      "ok",
+      8000,
+    )
+  }
+
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="modal-card pay-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>微信扫码支付</h3>
+          <button className="modal-close" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        </div>
+        <p className="modal-sub">
+          {plan.label} · 任写 {plan.count} 篇 · 应付 <b style={{ color: "var(--brand-600, #4f46e5)" }}>¥{plan.price}</b>
+          <span style={{ color: "var(--ink-400)" }}>（原价 ¥{plan.original}）</span>
+        </p>
+        <img className="pay-qr" src="./wechat-pay.png" alt="微信收款码" />
+        <ol className="pay-steps">
+          <li>打开微信 → 右上角「+」→ 扫一扫，扫描上方收款码</li>
+          <li>
+            支付 <b>¥{plan.price}</b>，可备注订单号 <b>{orderNo}</b>
+          </li>
+          <li>支付后点下方按钮，把「支付截图 + 订单号」发给管理员核对开通</li>
+        </ol>
+        <div className="pay-order">
+          订单号：<b>{orderNo}</b>（已保存在本浏览器）
+        </div>
+        {paid ? (
+          <div className="pay-done">
+            ✓ 订单已登记。请把支付截图与订单号发给管理员，核对后立即为你开通（通常几分钟内）。
+          </div>
+        ) : (
+          <button className="btn btn-primary btn-block btn-lg" onClick={finish}>
+            我已完成支付
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn-ghost btn-block btn-sm"
+          style={{ marginTop: 10 }}
+          onClick={async () => {
+            const ok = await copyText(orderText)
+            notify(ok ? "订单信息已复制" : "复制失败，请手动记录订单号", ok ? "ok" : "err", 3200)
+          }}
+        >
+          复制订单信息
+        </button>
+        <div className="demo-hint">
+          <b>支付说明：</b> 本站为演示站点，微信扫码为人工核销：支付完成后请把<b>支付截图 + 订单号</b>发给管理员，核对无误后开通对应套餐；同一订单号请勿重复支付。
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Pricing() {
+  const [pay, setPay] = useState(null)
   const choose = (p) => {
-    notify(`已选择「${p.label}」，当前演示版未接入支付，可在正式版配置支付通道`, "info", 4200)
+    setPay(p)
   }
   return (
     <section className="section section-soft" id="pricing">
@@ -379,10 +495,11 @@ export function Pricing() {
         </div>
         <Reveal delay={200}>
           <p className="pricing-footnote">
-            ❉ 批量采购、OEM 合作与代理咨询请通过商务渠道联系 · ❉ 演示版生成的文档仅供学习与功能体验
+            ❉ 支持微信扫码支付（人工核销开通） · ❉ 批量采购、OEM 合作与代理咨询请通过商务渠道联系 · ❉ 演示版生成的文档仅供学习与功能体验
           </p>
         </Reveal>
       </div>
+      {pay && <PayModal plan={pay} onClose={() => setPay(null)} />}
     </section>
   )
 }

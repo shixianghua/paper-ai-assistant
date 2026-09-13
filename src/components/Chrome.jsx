@@ -23,8 +23,10 @@ import {
   dismissToast,
   formatTime,
   loginDemo,
+  loginWithPassword,
   logout,
   notify,
+  registerAccount,
   removeRecord,
   useStore,
 } from "../lib/store"
@@ -178,80 +180,66 @@ export function Navbar({ onLogin }) {
 
 /* ---------- Login modal ---------- */
 export function LoginModal({ mode, onClose }) {
-  const [tab, setTab] = useState(mode === "register" ? "code" : "code")
+  const [tab, setTab] = useState(mode === "register" ? "register" : "login")
   const [phone, setPhone] = useState("")
-  const [code, setCode] = useState("")
-  const [sent, setSent] = useState(null)
-  const [count, setCount] = useState(0)
+  const [pwd, setPwd] = useState("")
+  const [pwd2, setPwd2] = useState("")
   const [busy, setBusy] = useState(false)
-  const timer = useRef(null)
 
-  useEffect(() => () => clearInterval(timer.current), [])
   useEffect(() => {
     document.body.classList.add("no-scroll")
     return () => document.body.classList.remove("no-scroll")
   }, [])
 
-  const sendCode = () => {
-    if (!/^1\d{10}$/.test(phone)) {
-      notify("请输入 11 位手机号", "err")
-      return
-    }
-    const c = String(Math.floor(100000 + Math.random() * 900000))
-    setSent(c)
-    setCode(c)
-    setCount(60)
-    timer.current = setInterval(() => {
-      setCount((v) => {
-        if (v <= 1) clearInterval(timer.current)
-        return v - 1
-      })
-    }, 1000)
-    notify(`演示验证码 ${c} 已自动填入，直接点「登录 / 注册」即可`, "info", 9000)
-  }
-
   const submit = () => {
-    if (!/^1\d{10}$/.test(phone)) {
-      notify("请输入 11 位手机号", "err")
+    if (!/^1\d{10}$/.test(phone.trim())) {
+      notify("请输入 11 位手机号（以 1 开头）", "err")
       return
     }
-    if (tab === "code" && code !== sent) {
-      notify("验证码不正确：请先点「获取验证码」，验证码会显示在输入框下方", "err", 6000)
+    if (String(pwd).length < 6) {
+      notify("密码至少 6 位", "err")
+      return
+    }
+    if (tab === "register" && pwd !== pwd2) {
+      notify("两次输入的密码不一致", "err")
       return
     }
     setBusy(true)
     setTimeout(() => {
-      loginDemo(phone)
+      const res = tab === "register" ? registerAccount(phone, pwd) : loginWithPassword(phone, pwd)
       setBusy(false)
+      if (!res.ok) {
+        notify(res.error, "err", 5200)
+        return
+      }
       onClose()
-      notify(`欢迎使用升格智能论文系统`, "ok")
-    }, 650)
+      notify(tab === "register" ? "注册成功，已自动登录" : "登录成功，欢迎回来", "ok", 3600)
+    }, 520)
   }
 
-  // 演示环境一键进入：免验证码，避免用户找不到演示验证码
+  // 演示环境一键进入：不需要注册，也不发送短信
   const demoLogin = () => {
-    const p = /^1\d{10}$/.test(phone) ? phone : "13800000000"
-    loginDemo(p)
+    loginDemo(phone)
     onClose()
-    notify("已进入演示账号（验证码登录仅为演示，不发送真实短信）", "ok", 4200)
+    notify("已进入演示账号（演示版不发送短信、不需要验证码）", "ok", 4200)
   }
 
   return (
     <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>{tab === "code" ? "手机号登录 / 注册" : "密码登录"}</h3>
+          <h3>{tab === "login" ? "手机号登录" : "手机号注册"}</h3>
           <button className="modal-close" onClick={onClose} aria-label="关闭">
             <X size={17} />
           </button>
         </div>
         <p className="modal-sub">登录后大纲、正文与写作记录将同步到你的账号</p>
         <div className="seg" style={{ marginBottom: 18 }}>
-          <button className={tab === "code" ? "on" : ""} onClick={() => setTab("code")}>
-            验证码登录
+          <button className={tab === "login" ? "on" : ""} onClick={() => setTab("login")}>
+            登录
           </button>
-          <button className={tab === "password" ? "on" : ""} onClick={() => setTab("password")}>
-            密码登录
+          <button className={tab === "register" ? "on" : ""} onClick={() => setTab("register")}>
+            注册
           </button>
         </div>
         <div className="form-stack">
@@ -262,57 +250,47 @@ export function LoginModal({ mode, onClose }) {
               className="input"
               placeholder="请输入 11 位手机号"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              inputMode="numeric"
+              maxLength={11}
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
             />
           </div>
-          {tab === "code" ? (
-            <>
-              <div className="field">
-                <label htmlFor="code">验证码</label>
-                <div className="otp-row">
-                  <input
-                    id="code"
-                    className="input"
-                    placeholder="6 位验证码"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                  />
-                  <button className="btn btn-outline btn-sm" onClick={sendCode} disabled={count > 0}>
-                    {count > 0 ? `${count}s 后重发` : "获取验证码"}
-                  </button>
-                </div>
-              </div>
-              <div className={`demo-code${sent ? "" : " idle"}`} role="status" aria-live="polite">
-                {sent ? (
-                  <>
-                    <span>
-                      演示验证码 <b>{sent}</b> · 已自动填入，无需等手机短信
-                    </span>
-                    <button type="button" className="btn btn-outline btn-sm" onClick={() => setCode(sent)}>
-                      填入
-                    </button>
-                  </>
-                ) : (
-                  <span>演示环境不会真的发短信：点「获取验证码」后，6 位验证码会直接显示在这里。</span>
-                )}
-              </div>
-            </>
-          ) : (
+          <div className="field">
+            <label htmlFor="pwd">密码</label>
+            <input
+              id="pwd"
+              className="input"
+              type="password"
+              placeholder={tab === "register" ? "设置密码（至少 6 位）" : "请输入密码"}
+              value={pwd}
+              autoComplete={tab === "register" ? "new-password" : "current-password"}
+              onChange={(e) => setPwd(e.target.value)}
+            />
+          </div>
+          {tab === "register" && (
             <div className="field">
-              <label htmlFor="pwd">密码</label>
-              <input id="pwd" className="input" type="password" placeholder="请输入密码" />
+              <label htmlFor="pwd2">确认密码</label>
+              <input
+                id="pwd2"
+                className="input"
+                type="password"
+                placeholder="请再次输入密码"
+                value={pwd2}
+                autoComplete="new-password"
+                onChange={(e) => setPwd2(e.target.value)}
+              />
             </div>
           )}
           <button className="btn btn-primary btn-block btn-lg" onClick={submit} disabled={busy}>
             {busy && <Loader2 className="spin" size={18} />}
-            {busy ? "正在进入…" : "登录 / 注册"}
+            {busy ? "正在进入…" : tab === "register" ? "注册并登录" : "登录"}
           </button>
         </div>
         <button type="button" className="btn btn-ghost btn-block btn-sm" style={{ marginTop: 12 }} onClick={demoLogin}>
-          演示环境一键登录（免验证码）
+          演示环境一键登录（免注册）
         </button>
         <div className="demo-hint">
-          <b>演示说明：</b> 本前端为开源演示版，数据仅保存在浏览器本地，<b>不会真的发送短信</b>。输入任意 11 位手机号，点「获取验证码」后，6 位验证码会直接显示在窗口内并自动填入，再点「登录 / 注册」即可。
+          <b>演示说明：</b> 本前端为开源演示版，账号与数据仅保存在浏览器本地，<b>不发送短信、也不需要验证码</b>。首次使用请切到「注册」，用手机号设置一个密码；登录状态与写作记录保存在本浏览器，换设备或清理浏览器数据后需重新注册。
         </div>
         <div className="form-foot">
           <span style={{ color: "var(--ink-400)", fontWeight: 600 }}>登录即代表同意用户协议</span>
