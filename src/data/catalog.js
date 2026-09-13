@@ -221,8 +221,8 @@ export const PROD_LINKS = [
 ]
 
 export const LEGAL_LINKS = [
-  { label: "学术诚信声明", href: "#faq" },
-  { label: "免责声明", href: "#faq" },
+  { label: "学术诚信声明", href: "#statement" },
+  { label: "免责声明", href: "#statement" },
   { label: "隐私说明", href: "#faq" },
   { label: "用户协议", href: "#faq" },
 ]

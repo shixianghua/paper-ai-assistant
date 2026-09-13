@@ -3394,3 +3394,81 @@ ol {
     transform: none;
   }
 }
+
+/* ---------- 学术诚信与使用声明 ---------- */
+.statement-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.statement-img {
+  width: 100%;
+  display: block;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+  background: #fff;
+}
+
+.statement-side {
+  display: grid;
+  gap: 12px;
+}
+
+.statement-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px 18px;
+}
+
+.statement-card h4 {
+  margin: 0 0 6px;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--ink-900);
+}
+
+.statement-card p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.85;
+  color: var(--ink-600, #3c4463);
+}
+
+.statement-card.warn {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.statement-card.warn h4 {
+  color: #b91c1c;
+}
+
+.statement-card.cs {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+}
+
+.statement-card.cs h4 {
+  color: var(--brand-700, #4338ca);
+}
+
+.cs-id {
+  font-size: 16px;
+  letter-spacing: 0.4px;
+  color: var(--brand-700, #4338ca);
+}
+
+.cs-note {
+  color: var(--ink-400);
+  font-size: 12.5px;
+}
+
+@media (max-width: 900px) {
+  .statement-wrap {
+    grid-template-columns: 1fr;
+  }
+}

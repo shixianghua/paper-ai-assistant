@@ -10,6 +10,7 @@ import {
   HistorySection,
   MatrixBand,
   Pricing,
+  StatementSection,
 } from "../components/Blocks"
 import { Footer, LoginModal, Navbar, Reveal, ToastHost } from "../components/Chrome"
 
@@ -40,6 +41,7 @@ export default function Home() {
         </section>
         <HistorySection />
         <Pricing />
+        <StatementSection />
         <Ecosystem />
         <FaqSection />
         <CtaBand />

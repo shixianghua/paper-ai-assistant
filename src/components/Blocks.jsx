@@ -665,6 +665,54 @@ export function Pricing() {
   )
 }
 
+/* ---------- 学术诚信与使用声明 ---------- */
+export function StatementSection() {
+  return (
+    <section className="section" id="statement">
+      <div className="container">
+        <Reveal>
+          <SectionHead
+            title={
+              <>
+                学术诚信与<span className="grad-text">使用声明</span>
+              </>
+            }
+            lead="使用前请阅读：平台生成内容属于参考稿件，不可直接作为毕业论文、学位论文或期刊论文提交。"
+          />
+        </Reveal>
+        <Reveal delay={120}>
+          <div className="statement-wrap">
+            <img className="statement-img" src="./statement.png" alt="学术诚信与使用声明：生成内容为参考稿件，不可直接提交为毕业论文、学位论文或期刊论文" />
+            <div className="statement-side">
+              <div className="statement-card warn">
+                <h4>生成内容属于「参考稿件」</h4>
+                <p>
+                  仅可用于学习、对比与写作辅助，<b>不可直接提交为本人的毕业论文、学位论文或期刊论文</b>。提交前须自行核实事实、数据与参考文献，并按学校要求修改结构、格式与字数。
+                </p>
+              </div>
+              <div className="statement-card">
+                <h4>学术诚信</h4>
+                <p>请遵守所在院校的学术规范，独立完成研究与写作，禁止代写、抄袭、买卖论文等学术不端行为。</p>
+              </div>
+              <div className="statement-card">
+                <h4>免责声明</h4>
+                <p>平台不对生成内容的原创性、准确性、完整性及是否满足特定院校或期刊要求作保证；因未按规范使用产生的一切后果由使用者自行承担。</p>
+              </div>
+              <div className="statement-card cs">
+                <h4>客服支持</h4>
+                <p>
+                  添加微信：<b className="cs-id">sgeedu6800</b>
+                  <span className="cs-note">（工作日 9:00–21:00）</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </Reveal>
+      </div>
+    </section>
+  )
+}
+
 /* ---------- Ecosystem ---------- */
 const ECO_ICONS = [Plug, Globe, Rocket, Gift]
 

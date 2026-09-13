@@ -522,9 +522,9 @@ export function Footer() {
                   {l.label}
                 </a>
               ))}
-              <a href="mailto:hello@example.com" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                <Mail size={13} /> business@example.com
-              </a>
+              <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontWeight: 700, color: "var(--brand-700, #4338ca)" }}>
+                <Mail size={13} /> 客服微信：sgeedu6800
+              </span>
             </div>
           </div>
         </div>
