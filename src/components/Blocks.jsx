@@ -23,8 +23,9 @@ import {
   Zap,
 } from "lucide-react"
 import { DOC_TYPE_GROUPS, DOC_TYPES, ECO, FAQS, FEATURES, PRICING, STEPS } from "../data/catalog"
-import { notify, useStore } from "../lib/store"
-import { apiCreateOrder } from "../lib/api"
+import { notify, refreshAccount, useStore } from "../lib/store"
+import { apiPayCreate, apiPayStatus } from "../lib/api"
+import QRCodeLib from "qrcode"
 import { RecordRows, Reveal, SectionHead } from "./Chrome"
 import { scrollToId } from "../lib/scroll"
 
@@ -379,7 +380,10 @@ async function copyText(text) {
 function PayModal({ plan, onClose }) {
   const { user, backend, token } = useStore()
   const [orderNo, setOrderNo] = useState(makeOrderNo)
-  const [serverOrder, setServerOrder] = useState(false)
+  const [auto, setAuto] = useState(false)
+  const [qr, setQr] = useState("")
+  const [status, setStatus] = useState("idle") // idle | waiting | paid
+  const [left, setLeft] = useState(null)
   const [paid, setPaid] = useState(false)
 
   useEffect(() => {
@@ -387,15 +391,19 @@ function PayModal({ plan, onClose }) {
     return () => document.body.classList.remove("no-scroll")
   }, [])
 
-  // 已登录且服务器可用时，先在后台登记订单，管理员后台即可看到待核销记录
+  // 登录后自动创建支付订单：若配置了自动支付通道，则走「扫码 → 自动到账」
   useEffect(() => {
     if (!backend || !token) return
     let alive = true
-    apiCreateOrder(token, { plan_label: plan.label, plan_count: plan.count, amount: plan.price })
-      .then((d) => {
-        if (alive && d.order_no) {
-          setOrderNo(d.order_no)
-          setServerOrder(true)
+    apiPayCreate(token, { plan_label: plan.label, plan_count: plan.count, amount: plan.price })
+      .then(async (d) => {
+        if (!alive || !d.order_no) return
+        setOrderNo(d.order_no)
+        if (d.auto && d.pay_url) {
+          setAuto(true)
+          setStatus("waiting")
+          const png = await QRCodeLib.toDataURL(d.pay_url, { width: 340, margin: 1, errorCorrectionLevel: "M" })
+          if (alive) setQr(png)
         }
       })
       .catch(() => {})
@@ -403,6 +411,32 @@ function PayModal({ plan, onClose }) {
       alive = false
     }
   }, [backend, token, plan])
+
+  // 轮询订单状态：付完款由服务端查询支付通道并自动发放额度
+  useEffect(() => {
+    if (!auto || !token || status === "paid") return
+    let alive = true
+    const tick = async () => {
+      try {
+        const d = await apiPayStatus(token, orderNo)
+        if (!alive) return
+        if (d.paid) {
+          setStatus("paid")
+          setLeft(d.user?.quotaLeft ?? null)
+          notify(`支付成功，已自动到账：剩余 ${d.user?.quotaLeft ?? "—"} 篇`, "ok", 7000)
+          refreshAccount().catch(() => {})
+        }
+      } catch {
+        /* 忽略单次轮询失败 */
+      }
+    }
+    tick()
+    const timer = setInterval(tick, 3000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [auto, token, orderNo, status])
 
   const orderText = `升格智能论文系统｜订单号：${orderNo}｜套餐：${plan.label}（任写 ${plan.count} 篇）｜金额：¥${plan.price}｜支付方式：微信扫码`
 
@@ -423,7 +457,7 @@ function PayModal({ plan, onClose }) {
     <div className="overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="modal-card pay-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h3>微信扫码支付</h3>
+          <h3>{auto ? "微信扫码支付（自动到账）" : "微信扫码支付"}</h3>
           <button className="modal-close" onClick={onClose} aria-label="关闭">
             ×
           </button>
@@ -432,31 +466,60 @@ function PayModal({ plan, onClose }) {
           {plan.label} · 任写 {plan.count} 篇 · 应付 <b style={{ color: "var(--brand-600, #4f46e5)" }}>¥{plan.price}</b>
           <span style={{ color: "var(--ink-400)" }}>（原价 ¥{plan.original}）</span>
         </p>
-        <img className="pay-qr" src="./qr-code.png" alt="微信收款码" />
-        <ol className="pay-steps">
-          <li>打开微信 → 右上角「+」→ 扫一扫，扫描上方收款码</li>
-          <li>
-            支付 <b>¥{plan.price}</b>，可备注订单号 <b>{orderNo}</b>
-          </li>
-          <li>支付后点下方按钮，把「支付截图 + 订单号」发给管理员核对开通</li>
-        </ol>
+        {auto && qr ? (
+          <img className="pay-qr" src={qr} alt="支付二维码" />
+        ) : (
+          <img className="pay-qr" src="./qr-code.png" alt="微信收款码" />
+        )}
+        {auto ? (
+          <>
+            <ol className="pay-steps">
+              <li>打开微信扫一扫，扫描上方二维码</li>
+              <li>
+                支付 <b>¥{plan.price}</b>（订单号 {orderNo} 已带入，无需手动备注）
+              </li>
+              <li>
+                <b>支付完成后无需任何操作</b>，系统自动核对并发放篇数
+              </li>
+            </ol>
+            {status === "paid" ? (
+              <div className="pay-done">
+                ✓ 支付成功，已自动到账{typeof left === "number" ? `：当前剩余 ${left} 篇` : ""}。
+              </div>
+            ) : (
+              <div className="pay-wait">
+                <span className="dot" /> 等待支付中… 支付成功后篇数会自动到账（无需联系管理员）
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <ol className="pay-steps">
+              <li>打开微信 → 右上角「+」→ 扫一扫，扫描上方收款码</li>
+              <li>
+                支付 <b>¥{plan.price}</b>，可备注订单号 <b>{orderNo}</b>
+              </li>
+              <li>支付后点下方按钮，把「支付截图 + 订单号」发给管理员核对开通</li>
+            </ol>
+            {paid ? (
+              <div className="pay-done">
+                ✓ 订单已登记。请把支付截图与订单号发给管理员，核对后立即为你开通（通常几分钟内）。
+              </div>
+            ) : (
+              <button className="btn btn-primary btn-block btn-lg" onClick={finish}>
+                我已完成支付
+              </button>
+            )}
+          </>
+        )}
         <div className="pay-order">
           订单号：<b>{orderNo}</b>
-          {serverOrder ? "（已登记到系统，管理员核销后自动到账）" : "（已保存在本浏览器）"}
+          {auto ? "（自动对账中）" : user ? "（已登记到系统）" : "（已保存在本浏览器）"}
         </div>
-        {!user && (
+        {!user && !auto && (
           <div className="demo-hint" style={{ marginTop: 0 }}>
             <b>提示：</b> 建议先登录再购买，这样系统会把订单绑定到你的手机号，核销后额度自动到账；未登录时请把订单号与支付截图发给管理员。
           </div>
-        )}
-        {paid ? (
-          <div className="pay-done">
-            ✓ 订单已登记。请把支付截图与订单号发给管理员，核对后立即为你开通（通常几分钟内）。
-          </div>
-        ) : (
-          <button className="btn btn-primary btn-block btn-lg" onClick={finish}>
-            我已完成支付
-          </button>
         )}
         <button
           type="button"

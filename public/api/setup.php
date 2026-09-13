@@ -76,9 +76,30 @@ try {
     fail('建表失败：' . $e->getMessage(), 500);
 }
 
+/* 结构升级：支付相关字段（已存在则跳过） */
+$columns = [
+    'pay_provider' => "VARCHAR(20) NOT NULL DEFAULT 'manual'",
+    'pay_url' => 'VARCHAR(600) NOT NULL DEFAULT \'\'',
+    'pay_trade_no' => "VARCHAR(64) NOT NULL DEFAULT ''",
+    'credited' => 'TINYINT(1) NOT NULL DEFAULT 0',
+    'last_checked' => 'DATETIME NULL',
+];
+$migrated = [];
+foreach ($columns as $col => $definition) {
+    $check = db()->prepare(
+        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+    );
+    $check->execute([DB_NAME, 'orders', $col]);
+    if ((int) $check->fetchColumn() === 0) {
+        db()->exec("ALTER TABLE orders ADD COLUMN {$col} {$definition}");
+        $migrated[] = $col;
+    }
+}
+
 out([
     'ok' => true,
     'created' => $done,
+    'migrated' => $migrated,
     'database' => DB_NAME,
     'tables' => db()->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN),
 ]);

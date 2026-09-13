@@ -91,6 +91,11 @@
 
         <section id="tab-stats">
           <div class="cards" id="statCards"></div>
+          <div class="cards" id="payStatus" style="margin-top:12px"></div>
+          <div class="bar">
+            <button id="checkPending" class="ghost">立即检查待支付订单（自动通道）</button>
+            <span class="muted">若配置了自动支付通道，点此可立即查询所有待支付订单并自动到账</span>
+          </div>
         </section>
 
         <section id="tab-users" class="hidden">
@@ -169,6 +174,25 @@
         $("#statCards").innerHTML = items
           .map(([k, v]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`)
           .join("")
+        const pay = await fetch("./api/pay.php?action=config").then((x) => x.json()).catch(() => ({}))
+        $("#payStatus").innerHTML = `
+          <div class="card">
+            <div class="k">支付通道</div>
+            <div class="v" style="font-size:18px">${
+              pay.provider === "manual"
+                ? "静态收款码（人工核销）"
+                : pay.provider === "epay"
+                  ? "易支付（自动到账）"
+                  : pay.provider === "wechat"
+                    ? "微信支付 Native（自动到账）"
+                    : pay.provider === "mock"
+                      ? "测试通道 mock（8 秒自动到账）"
+                      : pay.provider || "未配置"
+            }</div>
+            <div class="k" style="margin-top:6px">${
+              pay.auto ? "用户付款后系统自动发放篇数" : "需在后台点「核销开通」手动发放"
+            }</div>
+          </div>`
       }
 
       async function loadUsers(q = "") {
@@ -319,6 +343,22 @@
       })
       $("#filterPending").onclick = () => loadOrders("pending")
       $("#filterAll").onclick = () => loadOrders("")
+      $("#checkPending").onclick = async () => {
+        const key = localStorage.getItem("sg.admin.key") || ""
+        const r = await fetch("./api/pay.php?action=pending", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Admin-Key": key },
+          body: JSON.stringify({ action: "pending", key }),
+        })
+          .then((x) => x.json())
+          .catch(() => ({}))
+        toast(r.ok ? "已检查待支付订单并自动到账（如有已付款订单）" : r.error || "检查失败")
+        if (r.ok) {
+          loadOrders("")
+          loadUsers($("#userQuery").value.trim())
+          loadStats()
+        }
+      }
       $("#closeDlg").onclick = () => $("#detailDlg").close()
       document.querySelectorAll(".tabs button").forEach((btn) => {
         btn.onclick = () => {

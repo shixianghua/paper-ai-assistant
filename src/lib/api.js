@@ -43,6 +43,9 @@ export const apiMe = (token) => req("auth.php", { action: "me" }, token)
 export const apiLogout = (token) => req("auth.php", { action: "logout" }, token)
 export const apiConsume = (token, payload) => req("usage.php", { action: "consume", ...payload }, token)
 export const apiCreateOrder = (token, payload) => req("orders.php", { action: "create", ...payload }, token)
+export const apiPayConfig = () => req("pay.php", { action: "config" })
+export const apiPayCreate = (token, payload) => req("pay.php", { action: "create", ...payload }, token)
+export const apiPayStatus = (token, orderNo) => req("pay.php", { action: "status", order_no: orderNo }, token)
 
 export async function apiAvailable() {
   try {

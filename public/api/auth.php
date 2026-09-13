@@ -2,6 +2,7 @@
 /* 账号接口：注册 / 登录 / 我的信息 / 退出 */
 
 require __DIR__ . '/config.php';
+require_once __DIR__ . '/pay-lib.php';
 
 $in = body();
 $action = param($in, 'action');
@@ -54,6 +55,7 @@ try {
 
         case 'me': {
             $user = current_user();
+            maybe_poll_pending_orders(2);
             $orders = db()->prepare(
                 'SELECT order_no, plan_label, plan_count, amount, status, created_at, paid_at FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 30'
             );

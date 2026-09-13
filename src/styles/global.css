@@ -2113,6 +2113,35 @@ ol {
   line-height: 1.7;
 }
 
+.pay-wait {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.pay-wait .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #4f46e5;
+  animation: payPulse 1.1s ease-in-out infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes payPulse {
+  0%, 100% { transform: scale(0.75); opacity: 0.5; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
 /* ---------- 剩余额度标签 / 我的账户 ---------- */
 .quota-chip {
   margin-left: 7px;

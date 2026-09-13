@@ -2,6 +2,7 @@
 /* 订单接口：创建订单（待管理员核销）/ 查看我的订单 */
 
 require __DIR__ . '/config.php';
+require_once __DIR__ . '/pay-lib.php';
 
 $in = body();
 $action = param($in, 'action', 'create');
@@ -23,6 +24,7 @@ try {
     }
 
     if ($action === 'list') {
+        maybe_poll_pending_orders(2);
         $stmt = db()->prepare(
             'SELECT order_no, plan_label, plan_count, amount, status, created_at, paid_at FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT 50'
         );
