@@ -25,12 +25,12 @@ export const PAPER_FORMATS = [
   {
     key: "ouc-bachelor",
     label: "国家开放大学 · 本科毕业论文",
-    desc: "官方格式：一、（一）1.（1）四级标题 · 正文小四宋体 · 行距24磅 · 含国开封面字段",
+    desc: "官方格式：一、（一）1.（1）四级标题 · 正文小四宋体 · 行距24磅 · 三线表/图题在下表题在上 · 页下脚注 · 含国开封面字段",
   },
   {
     key: "ouc-degree",
     label: "国家开放大学 · 学位论文",
-    desc: "官方格式：A4 上下2.6cm左右3cm · 1.5倍行距 · 标题黑体分级 · 含授权声明",
+    desc: "官方格式：A4 上下2.6cm左右3cm · 1.5倍行距 · 标题黑体分级 · 图表编号规范 · 页下脚注 · 含授权声明",
   },
   {
     key: "generic",
@@ -196,9 +196,13 @@ function baseCss(fmtKey) {
   .chart{width:14.0cm;height:auto;}
   .fig-cap{font-family:${FONT.song};font-size:10.5pt;text-align:center;text-indent:0;margin:0 0 10.0pt;}
   .tbl-cap{font-family:${FONT.song};font-size:10.5pt;text-align:center;text-indent:0;margin:8.0pt 0 4.0pt;}
-  table{border-collapse:collapse;width:100%;margin:0 0 10.0pt;font-size:10.5pt;}
-  th,td{border:1px solid #000;padding:3.0pt 5.0pt;text-align:center;line-height:1.4;}
-  th{font-family:${FONT.hei};}
+  /* 三线表：顶线、栏目线、底线，无竖线（国家开放大学论文表格规范） */
+  table.data{border-collapse:collapse;width:100%;margin:0 0 6.0pt;font-family:${FONT.song};font-size:10.5pt;}
+  table.data th,table.data td{border:none;padding:3.0pt 5.0pt;text-align:center;vertical-align:middle;line-height:1.4;}
+  .src-note{font-family:${FONT.song};font-size:9.0pt;text-align:left;text-indent:0;margin:0 0 10.0pt;}
+  .body sup,.fig-cap sup,.tbl-cap sup{font-size:9.0pt;}
+  .MsoFootnoteText{font-family:${FONT.song};font-size:9.0pt;text-indent:0;margin:0;}
+  .MsoFootnoteReference{vertical-align:super;}
   .ref{font-family:${FONT.song};font-size:12.0pt;line-height:${line};text-indent:0;margin:0 0 3.0pt;padding-left:24.0pt;text-indent:-24.0pt;text-align:left;}
   .note{font-size:9.0pt;color:#666;text-indent:0;margin-top:8.0pt;}
   .cover{text-align:center;}
@@ -293,8 +297,60 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
   const ouc = isOucFormat(fmt)
   let figNo = 0
   let tblNo = 0
+  const footnotes = []
 
-  const renderBlocks = (blocks) =>
+  const head = `<a style="mso-footnote-id:__ID__" href="#___ID__" name="_ftnref__N__" title=""><span class="MsoFootnoteReference"><span style="mso-special-character:footnote"></span></span></a>`
+
+  // 正文：图表编号上标引用 [1]、②③④ 注释标记 → Word 页下脚注
+  const richText = (text, noteMap) => {
+    let out = esc(text)
+    out = out.replace(/\[(\d+(?:\s*[-,，]\s*\d+)*)\]/g, "<sup>[$1]</sup>")
+    out = out.replace(/[①②③④⑤⑥⑦⑧⑨⑩]/g, (mark) => {
+      const note = noteMap?.get(mark)
+      if (!note) return `<sup>${mark}</sup>`
+      const n = footnotes.length + 1
+      const id = `ftn${n}`
+      footnotes.push({ id, n, text: typeof note === "string" ? note : note.text })
+      return head.replace(/__ID__/g, id).replace(/__N__/g, String(n))
+    })
+    return out
+  }
+
+  // 章节内 "注释：①……②……" 收集为页下脚注文本
+  const noteMapOf = (blocks) => {
+    const map = new Map()
+    ;(blocks || [])
+      .filter((b) => b.kind === "notes")
+      .forEach((b) => {
+        ;(b.items || []).forEach((it) => {
+          const marker = typeof it === "string" ? (it.match(/[①②③④⑤⑥⑦⑧⑨⑩]/) || [""])[0] : it.marker
+          const body = typeof it === "string" ? it.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, "") : it.text
+          if (marker && body) map.set(marker, body)
+        })
+      })
+    return map
+  }
+
+  const tableHtml = (t, label) => {
+    const cell = "padding:3.0pt 5.0pt;text-align:center;vertical-align:middle;border-left:none;border-right:none;"
+    const headCell = `${cell}border-top:1.5pt solid windowtext;border-bottom:0.75pt solid windowtext;font-family:${FONT.song};font-size:10.5pt;font-weight:bold;`
+    const bodyCell = `${cell}border:none;font-family:${FONT.song};font-size:10.5pt;`
+    const lastCell = `${cell}border-bottom:1.5pt solid windowtext;font-family:${FONT.song};font-size:10.5pt;`
+    const heads = (t.headers || []).map((h) => `<th style="${headCell}">${esc(h)}</th>`).join("")
+    const rows = (t.rows || [])
+      .map((r, ri) => {
+        const style = ri === (t.rows || []).length - 1 ? lastCell : bodyCell
+        return `<tr>${r.map((c) => `<td style="${style}">${esc(c)}</td>`).join("")}</tr>`
+      })
+      .join("")
+    return (
+      `<p class="tbl-cap">${esc(label)}</p>` +
+      `<table class="data" border="0" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;mso-table-lspace:0pt;mso-table-rspace:0pt;">` +
+      `<thead><tr>${heads}</tr></thead><tbody>${rows}</tbody></table>`
+    )
+  }
+
+  const renderBlocks = (blocks, noteMap) =>
     (blocks || [])
       .map((b) => {
         if (b.kind === "h4") {
@@ -302,7 +358,9 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
           const cls = ouc ? (headInfo(b.text).level === 1 ? "h2" : "h3") : "h3"
           return `<p class="${cls}">${esc(label)}</p>`
         }
-        if (b.kind === "p") return `<p class="body">${esc(b.text)}</p>`
+        if (b.kind === "p") return `<p class="body">${richText(b.text, noteMap)}</p>`
+        if (b.kind === "src") return `<p class="src-note">${esc(b.text)}</p>`
+        if (b.kind === "notes") return "" // 注释改为页下脚注，正文不再重复列出
         if (b.kind === "figure" && b.figure) {
           const n = figNo
           figNo += 1
@@ -313,15 +371,7 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
         }
         if (b.kind === "table" && b.table) {
           tblNo += 1
-          const t = b.table
-          const head = (t.headers || []).map((h) => `<th>${esc(h)}</th>`).join("")
-          const rows = (t.rows || [])
-            .map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`)
-            .join("")
-          return (
-            `<p class="tbl-cap">${esc(tableLabel(tblNo, t.title, fmt))}</p>` +
-            `<table border="1" cellspacing="0" cellpadding="4"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`
-          )
+          return tableHtml(b.table, tableLabel(tblNo, b.table.title, fmt))
         }
         return ""
       })
@@ -329,7 +379,10 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
 
   const chapters = doc.sections || []
   const body = chapters
-    .map((s, i) => `<p class="h1">${esc(chapterLabel(i, s.title, fmt))}</p>${renderBlocks(s.blocks)}`)
+    .map(
+      (s, i) =>
+        `<p class="h1">${esc(chapterLabel(i, s.title, fmt))}</p>${renderBlocks(s.blocks, noteMapOf(s.blocks))}`,
+    )
     .join("")
 
   const tocRows = []
@@ -370,7 +423,16 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
       ? [coverHtml(doc, fmt), declHtml(fmt), PB, toc, abstract, PB, body, refs, ack]
       : [coverHtml(doc, fmt), PB, declHtml(fmt), PB, abstract, toc, body, refs, ack]
 
-  return `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(doc.title)}</title><style>${baseCss(fmt)}</style></head><body><div class="WordSection1">${order.join("")}</div><div style='mso-element:footer' id="f1"><p class="MsoFooter" style='text-align:center;font-family:${FONT.song};font-size:9.0pt'><span style='mso-field-code:PAGE'>1</span></p></div></body></html>`
+  const footnoteList = footnotes.length
+    ? `<div style="mso-element:footnote-list">${footnotes
+        .map(
+          (f) =>
+            `<div style="mso-element:footnote" id="${f.id}"><p class="MsoFootnoteText"><a style="mso-footnote-id:${f.id}" href="#_ftnref${f.n}" name="_${f.id}" title=""><span class="MsoFootnoteReference"><span style="mso-special-character:footnote"></span></span></a> ${esc(f.text)}</p></div>`,
+        )
+        .join("")}</div>`
+    : ""
+
+  return `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(doc.title)}</title><style>${baseCss(fmt)}</style></head><body><div class="WordSection1">${order.join("")}</div>${footnoteList}<div style='mso-element:footer' id="f1"><p class="MsoFooter" style='text-align:center;font-family:${FONT.song};font-size:9.0pt'><span style='mso-field-code:PAGE'>1</span></p></div></body></html>`
 }
 
 /* 供「材料清单」等文本文件使用 */
@@ -385,6 +447,8 @@ export function formatSpecSummary(key) {
       "摘要 / 目录：小二黑体加粗居中，字间空一格，段前段后各 24 磅；摘要内容四号宋体",
       "关键词：四号黑体“关键词：”+ 四号宋体词条，分号分隔",
       "图题置于图下方居中，表题置于表上方居中",
+      "图表编号：图 1、图 2……／表 1、表 2……（阿拉伯数字连续编号）；表格采用三线表，表内文字五号宋体；图表数据来源以小五号宋体标注在图/表下方",
+      "注释：以脚注形式置于该页下方，小五号宋体，句末标明引用页码；正文引用标注以上标 [1] 形式与文末参考文献对应",
       "参考文献：GB/T 7714，按正文出现次序 [1][2] 排列，不少于 10 篇",
     )
   } else if (key === "ouc-bachelor") {
@@ -395,6 +459,8 @@ export function formatSpecSummary(key) {
       "正文：小四号宋体，行间距 24 磅；段前缩进两字符",
       "摘要：300 字以内，小四号宋体，首行缩进两字符；关键词 3–7 个",
       "目录：按三级标题编排，从正文开始编页码，小四号宋体",
+      "图表：图的编号与图题置于图下方居中（图 1……）；表的编号与表题置于表上方居中（表 1……）；表格采用三线表，表内文字五号宋体，数据来源用小五号宋体注明",
+      "注释：一律采用页下脚注，格式参照参考文献并注明页码；申请学位的论文须有 3 处及以上注释；正文引用以上标 [序号] 标注并与文末参考文献对应",
       "参考文献：小四号宋体，顺序编码制 [序号]，不少于 10 篇",
       "封面：论文标题小二号黑体居中，副标题三号黑体居中，含分部/学习中心/专业/年级/学号/姓名/指导教师字段",
     )

@@ -53,11 +53,12 @@ export async function realOutline({ typeKey: _typeKey, typeLabel, topic, edu, la
   return items
 }
 
-function parseBlocks(md) {
+export function parseBlocks(md) {
   const blocks = []
   const lines = String(md || "").split("\n").map((s) => s.trimEnd())
   let para = []
   let table = null
+  let pendingTitle = null
   const clean = (s) =>
     String(s || "")
       .replace(/\*\*|__|\*|`|^#{1,6}\s*/g, "")
@@ -71,10 +72,17 @@ function parseBlocks(md) {
     }
   }
   const flushTable = () => {
-    if (table && table.rows.length) {
-      blocks.push({ kind: "table", table, demo: false })
+    if (table) {
+      if (table.rows.length) {
+        blocks.push({
+          kind: "table",
+          table: { ...table, title: table.title || pendingTitle || "数据统计表" },
+          demo: false,
+        })
+        pendingTitle = null
+      }
+      table = null
     }
-    table = null
   }
   lines.forEach((line) => {
     const t = line.trim()
@@ -85,6 +93,13 @@ function parseBlocks(md) {
     }
     if (/^!\[.*\]\(/.test(t) || /^(Figure|Fig\.?|Image|Picture)\s*\d/i.test(t)) {
       flushPara()
+      return
+    }
+    // “表1 表题”单占一行：作为紧随其后的 Markdown 表格的表题（国开：表题置于表上方居中）
+    if (/^表\s*(?:\d+\s*[:：、.]?\s*|[:：]\s*)/.test(t)) {
+      flushPara()
+      flushTable()
+      pendingTitle = clean(t.replace(/^表\s*(?:\d+\s*[:：、.]?\s*|[:：]\s*)/, ""))
       return
     }
     const head = t.match(/^(#{2,4})\s+(.*)/)
@@ -105,6 +120,29 @@ function parseBlocks(md) {
       } else {
         table.rows.push(cells)
       }
+      return
+    }
+    // 注释行（国开规范：页下脚注，正文用 ① 标记，格式参照参考文献并注明页码）
+    if (/^注\s*释\s*[:：]/.test(t)) {
+      flushPara()
+      flushTable()
+      const body = t.replace(/^注\s*释\s*[:：]\s*/, "")
+      const items = body
+        .split(/(?=[①②③④⑤⑥⑦⑧⑨⑩])/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s) => {
+          const marker = (s.match(/[①②③④⑤⑥⑦⑧⑨⑩]/) || ["①"])[0]
+          return { marker, text: s.replace(/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/, "") }
+        })
+      if (items.length) blocks.push({ kind: "notes", items })
+      return
+    }
+    // 图/表数据来源注（小五号宋体，紧随图/表下方）
+    if (/^(注\s*[:：]|数据来源\s*[:：]|资料来源\s*[:：])/.test(t)) {
+      flushPara()
+      flushTable()
+      blocks.push({ kind: "src", text: clean(t) })
       return
     }
     flushTable()
@@ -207,7 +245,7 @@ export async function realFullDoc(
       try {
         md = await withHeartbeat(
           callDeepSeek({
-            system: `${PROF}\n请撰写该章正文：结构按“本章任务→分节论证→本章小结”，按“本节清单”逐节展开并保留小节层级；表格用 Markdown 且必须给出可核查的数据出处，无真实数据时写“［待填入真实数据：指标名称、采集方式、数据来源］”，严禁编造百分比、样本量、显著性结果；引用标注用 [n]；图注表注一律中文；禁止空话、排比堆砌与重复句式。只输出 Markdown 正文，不要输出任何解释或结束语。`,
+            system: `${PROF}\n请撰写该章正文，严格执行国家开放大学论文写作规范：\n（1）结构按“本章任务→分节论证→本章小结”，按“本节清单”逐节展开并保留小节层级；\n（2）表格：先单独一行写“表N 表题”，紧接用 Markdown 三线表（表头行、分隔行、数据行，不要多余装饰），表内文字精炼；表下方单独一行写“注：数据来源：……（出处与年份）”；必须给出可核查的数据出处，无真实数据时写“［待填入真实数据：指标名称、采集方式、数据来源］”，严禁编造百分比、样本量、显著性结果；\n（3）图：需要插图时单独一行写“图N 图题”，图题一律中文，正文不要插入图片链接或英文图表标记；\n（4）引用：正文引用一律用上标形式 [n]，与文末参考文献序号一一对应；\n（5）注释：本章至少 1 处注释，正文相应位置用 ①（其后再用②③）标记，并在本章末尾单独一行写“注释：①作者. 题名[类型]. 出处, 年份: 页码。”（格式参照参考文献并注明具体页码）；\n（6）禁止空话、排比堆砌与重复句式，不写“本章将……”这类套话。只输出 Markdown 正文，不要输出任何解释或结束语。`,
             user: `论文题目：${topic}（${typeLabel}，全文目标 ${totalChars} 字）\n当前章节：${chapter.title}（第 ${ci}/${chapters.length} 章）\n本节清单：${kids.map((k) => k.title).join("、")}\n本章目标字数：${allocated} 字，允许浮动 ±15%，即不少于 ${Math.round(allocated * 0.85)} 字、不超过 ${Math.round(allocated * 1.15)} 字；写作时请边写边估算字数，接近上限即收束，不要超写。\n本章完成后全文仍有 ${remainingChars} 字待分配给其余章节。\n请撰写本章。`,
             maxTokens: Math.min(9000, Math.round(allocated * 1.2) + 900),
             temperature: 0.6,

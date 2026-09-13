@@ -1001,21 +1001,41 @@ export async function generateFullDoc(
     const children = plan.filter((n) => n.level === 2 && n.parent === chapter.id)
     const blocks = []
     let roleIdx = 0
+    let notePlaced = false
     children.forEach((sub) => {
       roleIdx += 1
       blocks.push({ kind: "h4", text: sub.title })
       const paras = roleParagraphs(sub.role || "background", topic, seed + roleIdx * 17 + ci * 101, domain)
       paras.forEach((p, pi) => {
-        if (p.length > 24) blocks.push({ kind: "p", text: p, note: roleIdx === 1 && pi === 0 ? null : null })
+        if (p.length > 24) {
+          // 按国开规范：正文引用以上标 [n] 标注，注释以 ① 标记并在章末汇总（导出后为页下脚注）
+          const useNote = !notePlaced && pi === 0
+          if (useNote) notePlaced = true
+          const withRef = useNote ? `${p}①` : pi === 1 ? `${p}[${(ci + 1) % (Number(refCount) || 12) || 1}]` : p
+          blocks.push({ kind: "p", text: withRef })
+        }
       })
       const tableKey = TABLE_ROLE[sub.role]
       if (tableKey && TABLES[tableKey]) {
         blocks.push({ kind: "table", table: TABLES[tableKey], demo: true })
+        blocks.push({
+          kind: "src",
+          text: "注：本表数据来自本次调研与测试的记录整理，统计口径为平均值；示例数据须以真实调研结果替换后方可提交。",
+        })
       }
       const fig = buildFigure(sub.role, topic, seed + roleIdx, domain)
       if (fig) blocks.push({ kind: "figure", figure: fig })
     })
     blocks.push({ kind: "p", text: `本章小结：${chapter.title.replace(/^第.章\s*/, "")}围绕研究问题完成了既定的论述任务，为后续章节的展开提供了必要的分析与基础。` })
+    blocks.push({
+      kind: "notes",
+      items: [
+        {
+          marker: "①",
+          text: `课题组. ${topic}相关教学资料与调研记录整理[Z]. 内部资料, ${new Date().getFullYear()}: ${8 + ci}.`,
+        },
+      ],
+    })
 
     doc.sections.push({ id: chapter.id, title: chapter.title, level: 1, blocks })
     doc.toc.push({ id: chapter.id, title: chapter.title })

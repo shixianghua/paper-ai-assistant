@@ -105,6 +105,14 @@ function docFullText(doc) {
   ].join("\n")
 }
 
+// 正文中的 [1] 引用与 ①②③ 注释标记按学术规范显示为上标
+function RichText({ text }) {
+  const parts = String(text || "").split(/(\[\d+(?:\s*[-,，]\s*\d+)*\]|[①②③④⑤⑥⑦⑧⑨⑩])/g)
+  return parts.map((p, i) =>
+    /^\[\d+(?:\s*[-,，]\s*\d+)*\]$/.test(p) || /^[①②③④⑤⑥⑦⑧⑨⑩]$/.test(p) ? <sup key={i}>{p}</sup> : p,
+  )
+}
+
 async function svgToPng(svgEl) {
   try {
     const xml = new XMLSerializer().serializeToString(svgEl)
@@ -822,7 +830,29 @@ export default function Workspace() {
                         <h3>{chapterLabel(si, s.title, paperFormat)}</h3>
                         {(s.blocks || []).map((b, bi) => {
                           if (b.kind === "h4") return <h4 key={bi}>{blockHeadLabel(b.text, paperFormat)}</h4>
-                          if (b.kind === "p") return <p key={bi}>{b.text}</p>
+                          if (b.kind === "p")
+                            return (
+                              <p key={bi}>
+                                <RichText text={b.text} />
+                              </p>
+                            )
+                          if (b.kind === "src")
+                            return (
+                              <p className="src-note" key={bi}>
+                                {b.text}
+                              </p>
+                            )
+                          if (b.kind === "notes" && (b.items || []).length)
+                            return (
+                              <div className="paper-notes" key={bi}>
+                                <div className="notes-title">注　释（导出 Word 后为页下脚注）</div>
+                                {b.items.map((it, ni) => (
+                                  <p className="note-line" key={ni}>
+                                    {typeof it === "string" ? it : `${it.marker} ${it.text}`}
+                                  </p>
+                                ))}
+                              </div>
+                            )
                           if (b.kind === "figure" && b.figure) {
                             figNo += 1
                             return (
@@ -840,7 +870,7 @@ export default function Workspace() {
                             return (
                               <div className="paper-table" key={bi}>
                                 <div className="table-title">{tableLabel(tblNo, b.table.title, paperFormat)}</div>
-                              <table>
+                              <table className="data-table">
                                 <thead>
                                   <tr>
                                     {b.table.headers.map((h) => (
