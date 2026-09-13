@@ -2137,6 +2137,18 @@ ol {
   flex: 0 0 auto;
 }
 
+.pay-error {
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.7;
+  margin: 14px 0;
+}
+
 @keyframes payPulse {
   0%, 100% { transform: scale(0.75); opacity: 0.5; }
   50% { transform: scale(1.15); opacity: 1; }

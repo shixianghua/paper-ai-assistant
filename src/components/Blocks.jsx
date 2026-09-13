@@ -381,6 +381,8 @@ function PayModal({ plan, onClose }) {
   const { user, backend, token } = useStore()
   const [orderNo, setOrderNo] = useState(makeOrderNo)
   const [auto, setAuto] = useState(false)
+  const [mode, setMode] = useState("loading") // loading | auto | manual | error
+  const [errMsg, setErrMsg] = useState("")
   const [provider, setProvider] = useState("")
   const [qr, setQr] = useState("")
   const [status, setStatus] = useState("idle") // idle | waiting | paid
@@ -394,21 +396,35 @@ function PayModal({ plan, onClose }) {
 
   // 登录后自动创建支付订单：若配置了自动支付通道，则走「扫码 → 自动到账」
   useEffect(() => {
-    if (!backend || !token) return
+    if (!backend || !token) {
+      setMode("manual")
+      return
+    }
     let alive = true
     apiPayCreate(token, { plan_label: plan.label, plan_count: plan.count, amount: plan.price })
       .then(async (d) => {
-        if (!alive || !d.order_no) return
-        setOrderNo(d.order_no)
+        if (!alive) return
+        if (d.order_no) setOrderNo(d.order_no)
+        setProvider(d.provider || "")
         if (d.auto && d.pay_url) {
           setAuto(true)
-          setProvider(d.provider || "")
+          setMode("auto")
           setStatus("waiting")
           const png = await QRCodeLib.toDataURL(d.pay_url, { width: 340, margin: 1, errorCorrectionLevel: "M" })
           if (alive) setQr(png)
+        } else if ((d.provider || "") === "manual") {
+          setMode("manual")
+        } else {
+          // 已配置自动支付通道但下单失败：不要退回微信收款码，直接提示重试
+          setMode("error")
+          setErrMsg(d.hint || d.error || "支付通道暂时不可用，请稍后重试")
         }
       })
-      .catch(() => {})
+      .catch((e) => {
+        if (!alive) return
+        setMode("error")
+        setErrMsg(e?.message || "下单失败，请稍后重试")
+      })
     return () => {
       alive = false
     }
@@ -441,7 +457,14 @@ function PayModal({ plan, onClose }) {
   }, [auto, token, orderNo, status])
 
   const payName = provider === "alipay" ? "支付宝" : provider === "wechat" || provider === "" ? "微信" : "手机"
-  const payTitle = auto ? `${payName}扫码支付（自动到账）` : "微信扫码支付"
+  const payTitle =
+    mode === "error"
+      ? "支付暂不可用"
+      : auto
+        ? `${payName}扫码支付（自动到账）`
+        : mode === "loading"
+          ? "正在创建支付订单…"
+          : "支付宝扫码支付"
   const orderText = `升格智能论文系统｜订单号：${orderNo}｜套餐：${plan.label}（任写 ${plan.count} 篇）｜金额：¥${plan.price}｜支付方式：${payName}扫码`
 
   const finish = async () => {
@@ -470,15 +493,54 @@ function PayModal({ plan, onClose }) {
           {plan.label} · 任写 {plan.count} 篇 · 应付 <b style={{ color: "var(--brand-600, #4f46e5)" }}>¥{plan.price}</b>
           <span style={{ color: "var(--ink-400)" }}>（原价 ¥{plan.original}）</span>
         </p>
-        {auto && qr ? (
-          <img className="pay-qr" src={qr} alt="支付二维码" />
-        ) : (
-          <img className="pay-qr" src="./qr-code.png" alt="微信收款码" />
+        {mode === "loading" && (
+          <div className="pay-wait" style={{ margin: "18px 0" }}>
+            <span className="dot" /> 正在创建支付订单…
+          </div>
         )}
-        {auto ? (
+        {mode === "manual" && <img className="pay-qr" src="./alipay-qr.png" alt="支付宝收款码" />}
+        {mode === "auto" && qr && <img className="pay-qr" src={qr} alt="支付二维码" />}
+        {mode === "error" && (
+          <>
+            <div className="pay-error">支付通道暂时不可用：{errMsg}</div>
+            <button
+              className="btn btn-primary btn-block btn-lg"
+              onClick={() => {
+                setMode("loading")
+                setErrMsg("")
+                apiPayCreate(token, { plan_label: plan.label, plan_count: plan.count, amount: plan.price })
+                  .then(async (d) => {
+                    if (d.order_no) setOrderNo(d.order_no)
+                    setProvider(d.provider || "")
+                    if (d.auto && d.pay_url) {
+                      setAuto(true)
+                      setMode("auto")
+                      setStatus("waiting")
+                      const png = await QRCodeLib.toDataURL(d.pay_url, {
+                        width: 340,
+                        margin: 1,
+                        errorCorrectionLevel: "M",
+                      })
+                      setQr(png)
+                    } else {
+                      setMode("error")
+                      setErrMsg(d.hint || d.error || "支付通道暂时不可用，请稍后重试")
+                    }
+                  })
+                  .catch((e) => {
+                    setMode("error")
+                    setErrMsg(e?.message || "下单失败，请稍后重试")
+                  })
+              }}
+            >
+              重新获取支付二维码
+            </button>
+          </>
+        )}
+        {mode === "auto" ? (
           <>
             <ol className="pay-steps">
-              <li>打开 {payName} 扫一扫，扫描上方二维码</li>
+              <li>打开{payName}扫一扫，扫描上方二维码</li>
               <li>
                 支付 <b>¥{plan.price}</b>（订单号 {orderNo} 已带入，无需手动备注）
               </li>
@@ -496,10 +558,10 @@ function PayModal({ plan, onClose }) {
               </div>
             )}
           </>
-        ) : (
+        ) : mode === "manual" ? (
           <>
             <ol className="pay-steps">
-              <li>打开微信 → 右上角「+」→ 扫一扫，扫描上方收款码</li>
+              <li>打开支付宝扫一扫，扫描上方收款码</li>
               <li>
                 支付 <b>¥{plan.price}</b>，可备注订单号 <b>{orderNo}</b>
               </li>
@@ -515,12 +577,12 @@ function PayModal({ plan, onClose }) {
               </button>
             )}
           </>
-        )}
+        ) : null}
         <div className="pay-order">
           订单号：<b>{orderNo}</b>
-          {auto ? "（自动对账中）" : user ? "（已登记到系统）" : "（已保存在本浏览器）"}
+          {mode === "auto" ? "（自动对账中）" : user ? "（已登记到系统）" : "（已保存在本浏览器）"}
         </div>
-        {!user && !auto && (
+        {!user && mode === "manual" && (
           <div className="demo-hint" style={{ marginTop: 0 }}>
             <b>提示：</b> 建议先登录再购买，这样系统会把订单绑定到你的手机号，核销后额度自动到账；未登录时请把订单号与支付截图发给管理员。
           </div>
@@ -536,9 +598,15 @@ function PayModal({ plan, onClose }) {
         >
           复制订单信息
         </button>
-        <div className="demo-hint">
-          <b>支付说明：</b> 本站为演示站点，微信扫码为人工核销：支付完成后请把<b>支付截图 + 订单号</b>发给管理员，核对无误后开通对应套餐；同一订单号请勿重复支付。
-        </div>
+        {mode === "auto" ? (
+          <div className="demo-hint">
+            <b>支付说明：</b> 扫码后由支付宝实时收款，支付成功后<b>系统自动核对并立即发放篇数</b>，无需联系管理员；请勿对同一订单重复支付。
+          </div>
+        ) : mode === "manual" ? (
+          <div className="demo-hint">
+            <b>支付说明：</b> 当前为人工核销通道：支付完成后请把<b>支付截图 + 订单号</b>发给管理员，核对无误后开通对应套餐；同一订单号请勿重复支付。
+          </div>
+        ) : null}
       </div>
     </div>
   )
