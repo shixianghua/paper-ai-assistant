@@ -843,9 +843,10 @@ export default function Workspace() {
                     ))}
                   </div>
                   {(() => {
-                    let figNo = 0
-                    let tblNo = 0
-                    return doc.sections.map((s, si) => (
+                    return doc.sections.map((s, si) => {
+                      let figNo = 0
+                      let tblNo = 0
+                      return (
                       <section key={s.id}>
                         <h3>{chapterLabel(si, s.title, paperFormat)}</h3>
                         {(s.blocks || []).map((b, bi) => {
@@ -881,7 +882,9 @@ export default function Workspace() {
                                   className="figure-svg"
                                   dangerouslySetInnerHTML={{ __html: b.figure.svg }}
                                 />
-                                <figcaption className="figure-title">{figLabel(figNo, b.figure.title, paperFormat)}</figcaption>
+                                <figcaption className="figure-title">
+                                  {figLabel(figNo, b.figure.title, paperFormat, si + 1)}
+                                </figcaption>
                               </figure>
                             )
                           }
@@ -889,7 +892,7 @@ export default function Workspace() {
                             tblNo += 1
                             return (
                               <div className="paper-table" key={bi}>
-                                <div className="table-title">{tableLabel(tblNo, b.table.title, paperFormat)}</div>
+                                <div className="table-title">{tableLabel(tblNo, b.table.title, paperFormat, si + 1)}</div>
                               <table className="data-table">
                                 <thead>
                                   <tr>
@@ -915,7 +918,8 @@ export default function Workspace() {
                           return null
                         })}
                       </section>
-                    ))
+                      )
+                    })
                   })()}
                   <h3>参考文献</h3>
                   {isOucFormat(paperFormat) ? (

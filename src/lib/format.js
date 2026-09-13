@@ -23,14 +23,19 @@
 
 export const PAPER_FORMATS = [
   {
-    key: "ouc-bachelor",
-    label: "国家开放大学 · 本科毕业论文",
-    desc: "官方格式：一、（一）1.（1）四级标题 · 正文小四宋体 · 行距24磅 · 三线表/图题在下表题在上 · 页下脚注 · 含国开封面字段",
+    key: "ynou-bachelor",
+    label: "某某大学 · 本科毕业论文",
+    desc: "云开模板：封面（题目/办学单位/专业/毕业时间/学号/姓名/指导教师）+ 原创性声明 + 版权使用授权声明 + 摘要 + 目录（含页码）+ 正文（一、/（一）/1.）+ 参考文献 + 致谢",
   },
   {
-    key: "ouc-degree",
-    label: "国家开放大学 · 学位论文",
-    desc: "官方格式：A4 上下2.6cm左右3cm · 1.5倍行距 · 标题黑体分级 · 图表编号规范 · 页下脚注 · 含授权声明",
+    key: "ynou-degree",
+    label: "某某大学 · 学士学位论文",
+    desc: "云开模板：摘要单独成页（三号黑体）· 目录含页码 · 每章另起一页（章标题三号黑体）· 图表按章编号（图1.2/表2.3）· 正文小四宋体1.5倍行距",
+  },
+  {
+    key: "ynou-college",
+    label: "某某大学 · 专科毕业论文（设计）",
+    desc: "云开模板：摘要（小二黑体居中，正文四号宋体）· 目录含页码 · 章标题小二黑体 · 页码从正文第 1 页起",
   },
   {
     key: "generic",
@@ -41,16 +46,19 @@ export const PAPER_FORMATS = [
 
 const LS_FORMAT = "sg.paper.format"
 
-export function isOucFormat(key) {
-  return key === "ouc-bachelor" || key === "ouc-degree"
+/** 是否为「某某大学（云开模板）」系列格式 */
+export function isYnouFormat(key) {
+  return key === "ynou-bachelor" || key === "ynou-degree" || key === "ynou-college"
 }
+/** 兼容旧命名 */
+export const isOucFormat = isYnouFormat
 
 export function getPaperFormat() {
   try {
     const v = localStorage.getItem(LS_FORMAT)
-    return PAPER_FORMATS.some((f) => f.key === v) ? v : "ouc-bachelor"
+    return PAPER_FORMATS.some((f) => f.key === v) ? v : "ynou-bachelor"
   } catch {
-    return "ouc-bachelor"
+    return "ynou-bachelor"
   }
 }
 
@@ -67,7 +75,10 @@ export function formatLabel(key) {
   return hit ? hit.label : PAPER_FORMATS[0].label
 }
 
-export const OUC_COVER_FIELDS = ["分部", "学习中心", "专业", "年级", "学号", "姓名", "指导教师"]
+/* 云开模板封面字段（本科/学位/专科通用） */
+export const YNU_COVER_FIELDS = ["办学单位", "专业", "毕业时间", "学号", "姓名", "指导教师姓名（职称）"]
+/** 兼容旧命名 */
+export const OUC_COVER_FIELDS = YNU_COVER_FIELDS
 
 /* ---------- 编号工具 ---------- */
 
@@ -111,14 +122,14 @@ export function headInfo(text) {
   }
 }
 
-// 章标题：第一章 绪论 → 一、绪论（国开）；通用格式保持原样
-export function chapterLabel(index, title, fmtKey = "ouc-bachelor") {
+// 章标题：第一章 绪论 → 一、绪论（云开）；通用格式保持原样
+export function chapterLabel(index, title, fmtKey = "ynou-bachelor") {
   if (!isOucFormat(fmtKey)) return String(title || "")
   return `${cnNum(index + 1)}、${stripHeadPrefix(title)}`
 }
 
-// 小节标题：1.6 本章小结 → （六）本章小结（国开二级）；1.6.1 → 1. 三级
-export function blockHeadLabel(text, fmtKey = "ouc-bachelor") {
+// 小节标题：1.6 本章小结 → （六）本章小结；1.6.1 → 1. 三级标题
+export function blockHeadLabel(text, fmtKey = "ynou-bachelor") {
   const raw = String(text || "").trim()
   if (!isOucFormat(fmtKey)) return raw
   const info = headInfo(raw)
@@ -138,14 +149,17 @@ function cleanCap(title) {
     .trim()
 }
 
-export function figLabel(n, title, fmtKey = "ouc-bachelor") {
+export function figLabel(n, title, fmtKey = "ynou-bachelor", chapterNo = 0) {
   const t = cleanCap(title)
-  return isOucFormat(fmtKey) ? `图${n}　${t}` : `图：${t}`
+  if (!isOucFormat(fmtKey)) return `图：${t}`
+  // 云开规范：图、表按章编号，如 图1.2、表2.3
+  return `图${chapterNo > 0 ? `${chapterNo}.${n}` : n}　${t}`
 }
 
-export function tableLabel(n, title, fmtKey = "ouc-bachelor") {
+export function tableLabel(n, title, fmtKey = "ynou-bachelor", chapterNo = 0) {
   const t = cleanCap(title)
-  return isOucFormat(fmtKey) ? `表${n}　${t}` : `表：${t}`
+  if (!isOucFormat(fmtKey)) return `表：${t}`
+  return `表${chapterNo > 0 ? `${chapterNo}.${n}` : n}　${t}`
 }
 
 /* ---------- Word 导出 ---------- */
@@ -161,59 +175,76 @@ const FONT = {
   song: '"宋体",SimSun,"Times New Roman",serif',
   hei: '"黑体",SimHei,"Microsoft YaHei",sans-serif',
   kai: '"楷体",KaiTi,"楷体_GB2312",serif',
+  fang: '"仿宋_GB2312",FangSong,"仿宋",serif',
 }
 
 function baseCss(fmtKey) {
-  const degree = fmtKey === "ouc-degree"
-  const ouc = isOucFormat(fmtKey)
-  const margin = ouc ? "2.6cm 3.0cm" : "2.54cm 3.17cm"
-  const line = degree ? "1.5" : "24.0pt"
+  const degree = fmtKey === "ynou-degree"
+  const college = fmtKey === "ynou-college"
+  const yn = isOucFormat(fmtKey)
+  // 云开：A4，页边距 上2.5 下2 左2.5 右2.5
+  const margin = yn ? "2.5cm 2.5cm 2.0cm 2.5cm" : "2.54cm 3.17cm"
+  const line = "1.5"
   const bodySize = "12.0pt"
+  // 字号：小二18 三号16 小三15 四号14 小四12 五号10.5
+  const h1Size = college ? "18.0pt" : "16.0pt" // 专科一级标题小二黑体；本科/学位三号黑体
+  const absTitleSize = college ? "18.0pt" : "16.0pt"
+  const absBodySize = college ? "14.0pt" : "12.0pt"
   return `
   @page WordSection1{
     size:21.0cm 29.7cm;
     margin:${margin};
     mso-header-margin:1.8cm;
-    mso-footer-margin:1.8cm;
+    mso-footer-margin:1.5cm;
     mso-footer:f1;
   }
   div.WordSection1{page:WordSection1;}
   body{font-family:${FONT.song};font-size:${bodySize};color:#000;}
   p{margin:0;text-align:justify;}
-  .body{font-family:${FONT.song};font-size:${bodySize};line-height:${line};${degree ? "mso-line-height-rule:auto;" : "mso-line-height-rule:exactly;"}text-indent:24.0pt;margin:0 0 ${degree ? "0" : "0"};}
-  .sec-title{font-family:${FONT.hei};font-size:18.0pt;font-weight:bold;text-align:center;text-indent:0;line-height:1.0;margin:24.0pt 0 24.0pt;letter-spacing:2.0pt;}
-  .h1{font-family:${FONT.hei};font-size:${degree ? "18.0pt" : "14.0pt"};font-weight:${degree ? "bold" : "normal"};line-height:${degree ? "1.0" : line};text-indent:24.0pt;text-align:left;margin:${degree ? "24.0pt 0 24.0pt" : "12.0pt 0 6.0pt"};}
-  .h2{font-family:${degree ? FONT.hei : FONT.hei};font-size:${degree ? "15.0pt" : "12.0pt"};font-weight:bold;line-height:${degree ? "1.0" : line};text-indent:24.0pt;text-align:left;margin:${degree ? "18.0pt 0 18.0pt" : "6.0pt 0 3.0pt"};}
-  .h3{font-family:${degree ? FONT.hei : FONT.song};font-size:${degree ? "12.0pt" : "12.0pt"};font-weight:bold;line-height:${degree ? "1.0" : line};text-indent:24.0pt;text-align:left;margin:${degree ? "12.0pt 0 12.0pt" : "6.0pt 0 3.0pt"};}
-  .h4{font-family:${FONT.kai};font-size:12.0pt;font-weight:bold;text-indent:24.0pt;text-align:left;}
-  .abs-body{font-family:${FONT.song};font-size:${degree ? "14.0pt" : "12.0pt"};line-height:${line};${degree ? "mso-line-height-rule:auto;" : "mso-line-height-rule:exactly;"}text-indent:24.0pt;}
-  .kw{font-size:${degree ? "14.0pt" : "12.0pt"};text-indent:0;margin-left:24.0pt;margin-top:6.0pt;}
-  .kw b{font-family:${FONT.hei};font-weight:bold;}
-  .toc1{font-family:${FONT.hei};font-size:12.0pt;text-indent:0;margin:0 0 2.0pt;}
-  .toc2{font-size:12.0pt;text-indent:24.0pt;margin:0;}
-  .toc-tip{font-size:9.0pt;color:#666;text-indent:0;margin-top:12.0pt;}
+  /* 正文：宋体 小四，1.5 倍行距，首行缩进 2 字 */
+  .body{font-family:${FONT.song};font-size:${bodySize};line-height:${line};mso-line-height-rule:auto;text-indent:24.0pt;margin:0;}
+  /* 摘要 / 目录 / 参考文献 / 致谢 标题 */
+  .sec-title{font-family:${FONT.hei};font-size:18.0pt;font-weight:bold;text-align:center;text-indent:0;line-height:1.5;margin:0 0 18.0pt;letter-spacing:6.0pt;}
+  .sec-title.abs{font-size:${absTitleSize};letter-spacing:3.0pt;}
+  /* 章节标题：一级 三号黑体（专科小二）／二级 小三黑体／三级 小四黑体，均居左 */
+  .h1{font-family:${FONT.hei};font-size:${h1Size};font-weight:normal;line-height:${line};text-indent:0;text-align:left;margin:12.0pt 0 6.0pt;}
+  .h2{font-family:${FONT.hei};font-size:15.0pt;font-weight:normal;line-height:${line};text-indent:0;text-align:left;margin:12.0pt 0 6.0pt;}
+  .h3{font-family:${FONT.hei};font-size:12.0pt;font-weight:normal;line-height:${line};text-indent:0;text-align:left;margin:12.0pt 0 6.0pt;}
+  .h4{font-family:${FONT.hei};font-size:12.0pt;text-indent:24.0pt;text-align:left;line-height:${line};}
+  .abs-body{font-family:${FONT.song};font-size:${absBodySize};line-height:${college ? line : "22.0pt"};${college ? "mso-line-height-rule:auto;" : "mso-line-height-rule:exactly;"}text-indent:${college ? "28.0pt" : "24.0pt"};}
+  .kw{font-size:${absBodySize};text-indent:0;margin:12.0pt 0 0;}
+  .kw b{font-family:${college ? FONT.hei : FONT.fang};font-weight:bold;}
+  /* 目录：条目 + 页码（PAGEREF 域） */
+  .toc1{font-family:${FONT.hei};font-size:12.0pt;text-indent:0;margin:0 0 3.0pt;line-height:1.5;}
+  .toc2{font-family:${FONT.song};font-size:12.0pt;text-indent:24.0pt;margin:0 0 2.0pt;line-height:1.5;}
+  .toc3{font-family:${FONT.song};font-size:12.0pt;text-indent:48.0pt;margin:0 0 2.0pt;line-height:1.5;}
+  .toc-page{font-family:${FONT.song};font-size:12.0pt;}
+  .toc-tip{font-size:9.0pt;color:#666;text-indent:0;margin-top:12.0pt;text-align:center;}
   .fig{text-align:center;text-indent:0;margin:8.0pt 0 4.0pt;}
   .chart{width:14.0cm;height:auto;}
-  .fig-cap{font-family:${FONT.song};font-size:10.5pt;text-align:center;text-indent:0;margin:0 0 10.0pt;}
-  .tbl-cap{font-family:${FONT.song};font-size:10.5pt;text-align:center;text-indent:0;margin:8.0pt 0 4.0pt;}
-  /* 三线表：顶线、栏目线、底线，无竖线（国家开放大学论文表格规范） */
+  /* 图名/表名：五号（专科用黑体，其余宋体），居中 */
+  .fig-cap{font-family:${college ? FONT.hei : FONT.song};font-size:10.5pt;text-align:center;text-indent:0;margin:0 0 10.0pt;line-height:1.5;}
+  .tbl-cap{font-family:${college ? FONT.hei : FONT.song};font-size:10.5pt;text-align:center;text-indent:0;margin:8.0pt 0 4.0pt;line-height:1.5;}
+  /* 三线表：顶线、栏目线、底线，无竖线；表内文字五号宋体 */
   table.data{border-collapse:collapse;width:100%;margin:0 0 6.0pt;font-family:${FONT.song};font-size:10.5pt;}
   table.data th,table.data td{border:none;padding:3.0pt 5.0pt;text-align:center;vertical-align:middle;line-height:1.4;}
   .src-note{font-family:${FONT.song};font-size:9.0pt;text-align:left;text-indent:0;margin:0 0 10.0pt;}
   .body sup,.fig-cap sup,.tbl-cap sup{font-size:9.0pt;}
   .MsoFootnoteText{font-family:${FONT.song};font-size:9.0pt;text-indent:0;margin:0;}
   .MsoFootnoteReference{vertical-align:super;}
-  .ref{font-family:${FONT.song};font-size:12.0pt;line-height:${line};text-indent:0;margin:0 0 3.0pt;padding-left:24.0pt;text-indent:-24.0pt;text-align:left;}
+  /* 参考文献：宋体小四，悬挂缩进 */
+  .ref{font-family:${FONT.song};font-size:12.0pt;line-height:${line};margin:0 0 3.0pt;padding-left:24.0pt;text-indent:-24.0pt;text-align:left;}
   .note{font-size:9.0pt;color:#666;text-indent:0;margin-top:8.0pt;}
   .cover{text-align:center;}
-  .cov-org{font-family:${FONT.hei};font-size:22.0pt;letter-spacing:8.0pt;margin-top:72.0pt;text-indent:0;text-align:center;}
-  .cov-kind{font-family:${FONT.hei};font-size:18.0pt;letter-spacing:4.0pt;margin-top:12.0pt;text-indent:0;text-align:center;}
-  .cov-title{font-family:${FONT.hei};font-size:18.0pt;margin:72.0pt 0 0;text-indent:0;text-align:center;}
-  .cov-sub{font-family:${FONT.hei};font-size:16.0pt;margin-top:8.0pt;text-indent:0;text-align:center;}
-  .cov-fields{font-family:${FONT.hei};font-size:14.0pt;line-height:2.0;margin-top:48.0pt;text-indent:0;text-align:center;}
-  .cov-date{font-family:${FONT.hei};font-size:14.0pt;margin-top:36.0pt;text-indent:0;text-align:center;}
+  .cov-org{font-family:${FONT.hei};font-size:28.0pt;letter-spacing:6.0pt;margin-top:60.0pt;text-indent:0;text-align:center;}
+  .cov-kind{font-family:${FONT.hei};font-size:22.0pt;letter-spacing:6.0pt;margin-top:16.0pt;text-indent:0;text-align:center;}
+  .cov-title{font-family:${FONT.hei};font-size:16.0pt;margin:56.0pt 0 0;text-indent:0;text-align:center;line-height:2.0;}
+  .cov-sub{font-family:${FONT.hei};font-size:14.0pt;margin-top:8.0pt;text-indent:0;text-align:center;}
+  .cov-fields{font-family:${FONT.hei};font-size:14.0pt;line-height:2.2;margin-top:40.0pt;text-indent:0;text-align:center;}
+  .cov-date{font-family:${FONT.hei};font-size:14.0pt;margin-top:28.0pt;text-indent:0;text-align:center;}
   .sign{font-size:12.0pt;text-indent:0;text-align:right;margin-top:36.0pt;}
   .pb{page-break-before:always;}
+  .decl-title{font-family:${FONT.hei};font-size:16.0pt;font-weight:bold;text-align:center;text-indent:0;margin:12.0pt 0 18.0pt;}
   `
 }
 
@@ -258,15 +289,16 @@ export function packWordMhtml(html, images = []) {
 
 function coverHtml(doc, fmtKey) {
   if (isOucFormat(fmtKey)) {
-    const kind = fmtKey === "ouc-degree" ? "学位论文" : "本科毕业论文"
-    const fields = OUC_COVER_FIELDS.map((f) => `${f}：${"　".repeat(10)}`).join("<br/>")
+    const kind =
+      fmtKey === "ynou-degree" ? "学士学位论文" : fmtKey === "ynou-college" ? "专科毕业论文（设计）" : "本科毕业论文"
+    const fields = YNU_COVER_FIELDS.map((f) => `${f}：${"　".repeat(8)}`).join("<br/>")
     return `
     <div class="cover">
-      <p class="cov-org">国家开放大学</p>
+      <p class="cov-org">某某大学</p>
       <p class="cov-kind">${kind}</p>
-      <p class="cov-title">${esc(doc.title)}</p>
+      <p class="cov-title">题目：${esc(doc.title)}</p>
       <p class="cov-fields">${fields}</p>
-      <p class="cov-date">论文完成日期：　　　　年　　　月</p>
+      <p class="cov-date">论文完成时间：　　　　年　　　月</p>
     </div>
     ${PB}`
   }
@@ -279,29 +311,32 @@ function coverHtml(doc, fmtKey) {
 }
 
 function declHtml(fmtKey) {
-  const degree = fmtKey === "ouc-degree"
-  const auth = degree
-    ? `${PB}<p class="sec-title">授权声明</p>
-       <p class="body">本人完全了解国家开放大学有关保留、使用学位论文的规定，同意学校保留并向有关部门送交论文的复印件和电子版，允许论文被查阅和借阅；本人授权国家开放大学可以将本论文的全部或部分内容编入有关数据库进行检索，可以采用影印、缩印或其他复制手段保存和汇编本论文。</p>
-       <p class="sign">作者签名：　　　　　　　　　导师签名：　　　　　　　　　日期：　　　年　　月　　日</p>`
-    : ""
+  if (!isOucFormat(fmtKey)) return ""
+  const kindWord = fmtKey === "ynou-degree" ? "学位论文" : "毕业论文"
   return `
-    <p class="sec-title">原创性声明</p>
-    <p class="body">本人郑重声明：所呈交的论文是本人在指导教师的指导下独立完成的研究成果。除文中已经注明引用的内容外，本论文不包含任何其他个人或集体已经发表或撰写过的研究成果，也不包含为获得国家开放大学或其他教育机构的学位或证书而使用过的材料。对本文的研究做出重要贡献的个人和集体，均已在文中以明确方式标明。</p>
-    <p class="body">论文作者签名：　　　　　　　　　日期：　　　年　　月　　日</p>
-    ${auth}`
+    <p class="decl-title">${kindWord}原创性声明</p>
+    <p class="body">本人郑重声明：所呈交的${kindWord}，是本人在导师指导下，进行研究工作所取得的成果。除文中已经注明引用的内容外，本${kindWord}的研究成果不包含任何他人创作的、已公开发表或者没有公开发表的作品的内容。对本论文所涉及的研究工作做出贡献的其他个人和集体，均已在文中以明确方式标明。本${kindWord}原创性声明的法律责任由本人承担。</p>
+    <p class="sign">作者签名：　　　　　　　　　　日期：　　　　年　　月　　日</p>
+    ${PB}
+    <p class="decl-title">${kindWord}版权使用授权声明</p>
+    <p class="body">本人完全了解某某大学关于收集、保存、使用${kindWord}的规定，同意如下各项内容：按照学校要求提交${kindWord}的印刷本和电子版本；学校有权保存${kindWord}的印刷本和电子版，并采用影印、缩印、扫描、数字化或其它手段保存论文；学校有权提供目录检索以及提供本${kindWord}全文或者部分的阅览服务，以及出版${kindWord}；学校有权按有关规定向国家有关部门或者机构送交论文的复印件和电子版；在不以赢利为目的的前提下，学校可以适当复制论文的部分或全部内容用于学术活动。</p>
+    <p class="sign">作者签名：　　　　　　　　　　日期：　　　　年　　月　　日</p>
+    ${PB}`
 }
 
-export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
-  const fmt = PAPER_FORMATS.some((f) => f.key === fmtKey) ? fmtKey : "ouc-bachelor"
+export function buildPaperHtml(doc, fmtKey = "ynou-bachelor") {
+  const fmt = PAPER_FORMATS.some((f) => f.key === fmtKey) ? fmtKey : "ynou-bachelor"
   const ouc = isOucFormat(fmt)
   let figNo = 0
-  let tblNo = 0
   const footnotes = []
+  const chapters = doc.sections || []
+
+  // 目录页码：Word 域（PAGEREF），打开文档后按 Ctrl+A → F9 更新为真实页码
+  const pageRef = (id) => `<span class="toc-page" style="mso-field-code:PAGEREF ${id} \\h">1</span>`
 
   const head = `<a style="mso-footnote-id:__ID__" href="#___ID__" name="_ftnref__N__" title=""><span class="MsoFootnoteReference"><span style="mso-special-character:footnote"></span></span></a>`
 
-  // 正文：图表编号上标引用 [1]、②③④ 注释标记 → Word 页下脚注
+  // 正文：引用 [n] 上标、①②③ 注释标记 → Word 页下脚注
   const richText = (text, noteMap) => {
     let out = esc(text)
     out = out.replace(/\[(\d+(?:\s*[-,，]\s*\d+)*)\]/g, "<sup>[$1]</sup>")
@@ -316,7 +351,6 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
     return out
   }
 
-  // 章节内 "注释：①……②……" 收集为页下脚注文本
   const noteMapOf = (blocks) => {
     const map = new Map()
     ;(blocks || [])
@@ -350,78 +384,87 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
     )
   }
 
-  const renderBlocks = (blocks, noteMap) =>
-    (blocks || [])
+  // 图、表按章编号（图1.2、表2.3）
+  const renderBlocks = (blocks, noteMap, chapterNo) => {
+    let figIn = 0
+    let tblIn = 0
+    return (blocks || [])
       .map((b) => {
         if (b.kind === "h4") {
-          const label = blockHeadLabel(b.text, fmt)
-          const cls = ouc ? (headInfo(b.text).level === 1 ? "h2" : "h3") : "h3"
-          return `<p class="${cls}">${esc(label)}</p>`
+          const level = headInfo(b.text).level || 2
+          const cls = ouc ? (level <= 1 ? "h2" : level === 2 ? "h3" : "h4") : "h3"
+          return `<p class="${cls}">${esc(blockHeadLabel(b.text, fmt))}</p>`
         }
         if (b.kind === "p") return `<p class="body">${richText(b.text, noteMap)}</p>`
         if (b.kind === "src") return `<p class="src-note">${esc(b.text)}</p>`
-        if (b.kind === "notes") return "" // 注释改为页下脚注，正文不再重复列出
+        if (b.kind === "notes") return ""
         if (b.kind === "figure" && b.figure) {
-          const n = figNo
+          const slot = figNo
           figNo += 1
+          figIn += 1
           return (
-            `<p class="fig"><img class="chart" src="__CHART__${n}__" alt="${esc(cleanCap(b.figure.title))}"/></p>` +
-            `<p class="fig-cap">${esc(figLabel(n + 1, b.figure.title, fmt))}</p>`
+            `<p class="fig"><img class="chart" src="__CHART__${slot}__" alt="${esc(cleanCap(b.figure.title))}"/></p>` +
+            `<p class="fig-cap">${esc(figLabel(figIn, b.figure.title, fmt, chapterNo))}</p>`
           )
         }
         if (b.kind === "table" && b.table) {
-          tblNo += 1
-          return tableHtml(b.table, tableLabel(tblNo, b.table.title, fmt))
+          tblIn += 1
+          return tableHtml(b.table, tableLabel(tblIn, b.table.title, fmt, chapterNo))
         }
         return ""
       })
       .join("")
+  }
 
-  const chapters = doc.sections || []
+  // 正文：另页开始；云开规范要求每章另起一页
   const body = chapters
-    .map(
-      (s, i) =>
-        `<p class="h1">${esc(chapterLabel(i, s.title, fmt))}</p>${renderBlocks(s.blocks, noteMapOf(s.blocks))}`,
-    )
+    .map((s, i) => {
+      const brk = ouc || i > 0 ? ` style="page-break-before:always"` : ""
+      return (
+        `<p class="h1"${brk}><a name="_TocCh${i + 1}"></a>${esc(chapterLabel(i, s.title, fmt))}</p>` +
+        renderBlocks(s.blocks, noteMapOf(s.blocks), i + 1)
+      )
+    })
     .join("")
 
-  const tocRows = []
+  // 目录：章 / 节 + 页码域
+  const tocRows = [`<p class="toc1">摘　要${pageRef("_TocAbs")}</p>`]
   chapters.forEach((s, i) => {
-    tocRows.push(`<p class="toc1">${esc(chapterLabel(i, s.title, fmt))}</p>`)
+    tocRows.push(`<p class="toc1">${esc(chapterLabel(i, s.title, fmt))}${pageRef(`_TocCh${i + 1}`)}</p>`)
     ;(s.blocks || [])
       .filter((b) => b.kind === "h4")
-      .forEach((b) => tocRows.push(`<p class="toc2">${esc(blockHeadLabel(b.text, fmt))}</p>`))
+      .forEach((b) => {
+        const level = headInfo(b.text).level || 2
+        tocRows.push(`<p class="${level <= 1 ? "toc2" : "toc3"}">${esc(blockHeadLabel(b.text, fmt))}</p>`)
+      })
   })
-  tocRows.push(`<p class="toc1">参考文献</p>`)
-  tocRows.push(`<p class="toc1">致谢</p>`)
+  tocRows.push(`<p class="toc1">参考文献${pageRef("_TocRefs")}</p>`)
+  tocRows.push(`<p class="toc1">致　谢${pageRef("_TocAck")}</p>`)
 
   const abstract = `
-    <p class="sec-title">摘　要</p>
+    <p class="sec-title abs"><a name="_TocAbs"></a>摘　要</p>
     <p class="abs-body">${esc(doc.abstract)}</p>
-    <p class="kw"><b>关键词：</b>${esc((doc.keywords || []).join(ouc ? "　" : "；"))}</p>
+    <p class="kw"><b>关键词：</b>${esc((doc.keywords || []).join("；"))}</p>
     ${PB}`
 
   const toc = `
     <p class="sec-title">目　录</p>
     ${tocRows.join("")}
-    <p class="toc-tip">提示：目录页码可在 Word 中自动生成——全选后按 F9，或使用「引用 → 目录 → 自动目录」。</p>
+    <p class="toc-tip">提示：目录页码为 Word 域，打开文档后按 Ctrl+A 再按 F9（或「引用 → 更新目录」）即可刷新为真实页码。</p>
     ${PB}`
 
   const refs = `
     ${PB}
-    <p class="sec-title">参考文献</p>
+    <p class="sec-title"><a name="_TocRefs"></a>参考文献</p>
     ${(doc.refs || []).map((r, i) => `<p class="ref">[${i + 1}] ${esc(r)}</p>`).join("")}
     ${doc.refsNote ? `<p class="note">${esc(doc.refsNote)}</p>` : ""}`
 
   const ack = `
     ${PB}
-    <p class="sec-title">致　谢</p>
+    <p class="sec-title"><a name="_TocAck"></a>致　谢</p>
     <p class="body">${esc(doc.ack || "")}</p>`
 
-  const order =
-    fmt === "ouc-degree"
-      ? [coverHtml(doc, fmt), declHtml(fmt), PB, toc, abstract, PB, body, refs, ack]
-      : [coverHtml(doc, fmt), PB, declHtml(fmt), PB, abstract, toc, body, refs, ack]
+  const order = [coverHtml(doc, fmt), declHtml(fmt), abstract, toc, body, refs, ack]
 
   const footnoteList = footnotes.length
     ? `<div style="mso-element:footnote-list">${footnotes
@@ -432,37 +475,41 @@ export function buildPaperHtml(doc, fmtKey = "ouc-bachelor") {
         .join("")}</div>`
     : ""
 
-  return `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(doc.title)}</title><style>${baseCss(fmt)}</style></head><body><div class="WordSection1">${order.join("")}</div>${footnoteList}<div style='mso-element:footer' id="f1"><p class="MsoFooter" style='text-align:center;font-family:${FONT.song};font-size:9.0pt'><span style='mso-field-code:PAGE'>1</span></p></div></body></html>`
+  return `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${esc(doc.title)}</title><style>${baseCss(fmt)}</style></head><body><div class="WordSection1">${order.join("")}</div>${footnoteList}<div style='mso-element:footer' id="f1"><p class="MsoFooter" style='text-align:center;font-family:${FONT.song};font-size:10.5pt'><span style='mso-field-code:PAGE'>1</span></p></div></body></html>`
 }
-
-/* 供「材料清单」等文本文件使用 */
 export function formatSpecSummary(key) {
   const fmt = PAPER_FORMATS.find((f) => f.key === key) || PAPER_FORMATS[0]
   const lines = [fmt.label, fmt.desc, ""]
-  if (key === "ouc-degree") {
+  if (key === "ynou-degree") {
     lines.push(
-      "版面：A4；页边距 上下 2.6cm、左右 3cm；页眉页脚 1.8cm",
-      "正文：小四号宋体，1.5 倍行距，段间距 0，每段首行缩进 2 字",
-      "标题：1 级小二黑体加粗（段前段后 24 磅）；2 级小三黑体加粗（18 磅）；3 级小四黑体加粗（12 磅）；4 级小四楷体加粗",
-      "摘要 / 目录：小二黑体加粗居中，字间空一格，段前段后各 24 磅；摘要内容四号宋体",
-      "关键词：四号黑体“关键词：”+ 四号宋体词条，分号分隔",
-      "图题置于图下方居中，表题置于表上方居中",
-      "图表编号：图 1、图 2……／表 1、表 2……（阿拉伯数字连续编号）；表格采用三线表，表内文字五号宋体；图表数据来源以小五号宋体标注在图/表下方",
-      "注释：以脚注形式置于该页下方，小五号宋体，句末标明引用页码；正文引用标注以上标 [1] 形式与文末参考文献对应",
-      "参考文献：GB/T 7714，按正文出现次序 [1][2] 排列，不少于 10 篇",
+      "版面：A4；页边距 上2.5cm 下2cm 左2.5cm 右2.5cm；左侧装订；页脚居中页码",
+      "结构：封面 → 学位论文原创性声明 → 版权使用授权声明 → 中文摘要及关键词 → 目录 → 正文（每章另起一页）→ 参考文献 → 致谢",
+      "摘要：单独成页，“摘要”三号黑体加粗居中（字间空 3 个半角字符）；正文宋体小四、1.5 倍行距、首行缩进 2 字；关键词 3—5 个，分号分隔",
+      "目录：单独成页，“目录”小二号黑体居中（字间空 4 个半角字符），列出章节与页码（宋体小四）；页码为 Word 域，按 Ctrl+A→F9 更新",
+      "正文：宋体小四、1.5 倍行距、段前段后 0、首行缩进 2 字；章标题黑体三号（另起一页）、节标题黑体小三、节中一级标题黑体四号，均居左",
+      "图表：按章编号（图1.2、表2.3）；图名置于图下方居中、表名置于表上方居中，宋体五号；表内文字宋体五号",
+      "引用：正文引用以右上角标 [1]、[2-4] 标注，与文末参考文献对应；参考文献按引用顺序编码",
+      "参考文献：标题黑体小三居中；条目宋体小四、GB/T 7714 格式，不少于 10 篇",
     )
-  } else if (key === "ouc-bachelor") {
+  } else if (key === "ynou-college") {
     lines.push(
-      "版面：A4；页边距 上下 2.6cm、左右 3cm；页眉页脚 1.8cm",
-      "标题层级：一、（此处用顿号）／（一）（不加符号）／1.（用点号）／（1）（不加符号）",
-      "一级标题四号黑体（单行）；二三级标题后不换行；各级标题前缩进两字空格",
-      "正文：小四号宋体，行间距 24 磅；段前缩进两字符",
-      "摘要：300 字以内，小四号宋体，首行缩进两字符；关键词 3–7 个",
-      "目录：按三级标题编排，从正文开始编页码，小四号宋体",
-      "图表：图的编号与图题置于图下方居中（图 1……）；表的编号与表题置于表上方居中（表 1……）；表格采用三线表，表内文字五号宋体，数据来源用小五号宋体注明",
-      "注释：一律采用页下脚注，格式参照参考文献并注明页码；申请学位的论文须有 3 处及以上注释；正文引用以上标 [序号] 标注并与文末参考文献对应",
-      "参考文献：小四号宋体，顺序编码制 [序号]，不少于 10 篇",
-      "封面：论文标题小二号黑体居中，副标题三号黑体居中，含分部/学习中心/专业/年级/学号/姓名/指导教师字段",
+      "版面：A4；页边距 上2.5cm 下2cm 左2.5cm 右2.5cm；页码从正文第 1 页起",
+      "结构：封面 → 毕业论文（设计）原创性声明 → 版权使用授权声明 → 中文摘要及关键词 → 目录 → 正文 → 参考文献 → 致谢",
+      "摘要：居中“摘要”小二号黑体加粗（字间空 3 个半角字符），下空一行为摘要内容（四号宋体）；关键词 3—5 个（“关键词：”四号黑体 + 四号宋体），不少于 300 字",
+      "目录：小二号黑体居中（字间空 4 个半角字符），下空一行为章、节及页码；章标题小四黑体，节标题小四宋体",
+      "正文：小四号宋体、1.5 倍行距、首行缩进；一级标题（章）小二号黑体居左、二级小三号黑体、三级小四号黑体",
+      "图表：图题在图下方居中、表题在表上方居中，图名表名五号黑体；表内文字五号宋体；可按章编号",
+      "参考文献：小四号宋体、GB/T 7714，按引用顺序 [1][2] 排列，不少于 10 篇",
+    )
+  } else if (key === "ynou-bachelor") {
+    lines.push(
+      "版面：A4；页边距 上2.5cm 下2cm 左2.5cm 右2.5cm；左侧装订；页脚居中页码",
+      "结构：封面（题目/办学单位/专业/毕业时间/学号/姓名/指导教师姓名（职称）/论文完成时间）→ 毕业论文原创性声明 → 版权使用授权声明 → 摘要 → 目录 → 正文 → 参考文献 → 致谢",
+      "摘要：约 300—400 字，宋体小四、固定行距 22 磅、首行缩进 2 字；关键词 3—5 个，仿宋_GB2312 小四，分号分隔",
+      "目录：“目录”居中，列出章节与页码；一级条目小四黑体、二级条目小四宋体；页码为 Word 域",
+      "正文：宋体小四、1.5 倍行距、段前段后 0、首行缩进 2 字；一级标题“一、”三号黑体居左、二级“（一）”小三黑体、三级“1.”小四黑体",
+      "图表：按章编号（图2.1、表2.2）；图名在图下方居中、表名在表上方居中，宋体五号；表内文字宋体五号",
+      "参考文献：标题黑体小三居中，条目宋体小四、GB/T 7714 格式，不少于 10 篇",
     )
   } else {
     lines.push("通用院校格式：第一章 / 1.1 式标题，正文小四宋体，通用 A4 页边距")

@@ -4,7 +4,35 @@ function esc(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
+/* 服务端爬虫：聚合 Crossref / OpenAlex / Semantic Scholar / PubMed（结果更全，且不受浏览器跨域限制） */
+async function fetchFromCrawler(topic, limit) {
+  const res = await fetch("./api/crawl.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "refs", q: topic, limit }),
+  })
+  if (!res.ok) throw new Error(`crawler ${res.status}`)
+  const data = await res.json()
+  if (!data?.ok || !Array.isArray(data.refs) || !data.refs.length) throw new Error(data?.error || "crawler empty")
+  return data.refs.map((r) => ({
+    text: r.text,
+    title: r.title,
+    doi: r.doi || "",
+    url: r.url || (r.doi ? `https://doi.org/${r.doi}` : ""),
+    origin: r.origin || "crawler",
+    source: r.source || "",
+    year: r.year || "",
+    real: true,
+  }))
+}
+
 export async function fetchRealRefs(topic, limit = 12) {
+  // 1) 优先走服务端爬虫（多源聚合）
+  try {
+    return await fetchFromCrawler(topic, Math.min(Number(limit) || 12, 20))
+  } catch {
+    /* 回退到浏览器直连 Crossref */
+  }
   const query = topic.replace(/[“”《》在中的运用研究基于与和]/g, " ").trim().slice(0, 60)
   const url =
     `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(query)}&rows=${Math.min(Number(limit) || 12, 20)}` +
