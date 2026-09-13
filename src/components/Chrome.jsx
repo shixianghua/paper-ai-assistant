@@ -199,6 +199,7 @@ export function LoginModal({ mode, onClose }) {
     }
     const c = String(Math.floor(100000 + Math.random() * 900000))
     setSent(c)
+    setCode(c)
     setCount(60)
     timer.current = setInterval(() => {
       setCount((v) => {
@@ -206,7 +207,7 @@ export function LoginModal({ mode, onClose }) {
         return v - 1
       })
     }, 1000)
-    notify(`验证码已发送（演示环境）：${c}`, "info", 5000)
+    notify(`演示验证码 ${c} 已自动填入，直接点「登录 / 注册」即可`, "info", 9000)
   }
 
   const submit = () => {
@@ -215,7 +216,7 @@ export function LoginModal({ mode, onClose }) {
       return
     }
     if (tab === "code" && code !== sent) {
-      notify("验证码不正确，请查看提示中的演示验证码", "err")
+      notify("验证码不正确：请先点「获取验证码」，验证码会显示在输入框下方", "err", 6000)
       return
     }
     setBusy(true)
@@ -225,6 +226,14 @@ export function LoginModal({ mode, onClose }) {
       onClose()
       notify(`欢迎使用升格智能论文系统`, "ok")
     }, 650)
+  }
+
+  // 演示环境一键进入：免验证码，避免用户找不到演示验证码
+  const demoLogin = () => {
+    const p = /^1\d{10}$/.test(phone) ? phone : "13800000000"
+    loginDemo(p)
+    onClose()
+    notify("已进入演示账号（验证码登录仅为演示，不发送真实短信）", "ok", 4200)
   }
 
   return (
@@ -257,21 +266,37 @@ export function LoginModal({ mode, onClose }) {
             />
           </div>
           {tab === "code" ? (
-            <div className="field">
-              <label htmlFor="code">验证码</label>
-              <div className="otp-row">
-                <input
-                  id="code"
-                  className="input"
-                  placeholder="6 位验证码"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                />
-                <button className="btn btn-outline btn-sm" onClick={sendCode} disabled={count > 0}>
-                  {count > 0 ? `${count}s 后重发` : "获取验证码"}
-                </button>
+            <>
+              <div className="field">
+                <label htmlFor="code">验证码</label>
+                <div className="otp-row">
+                  <input
+                    id="code"
+                    className="input"
+                    placeholder="6 位验证码"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                  />
+                  <button className="btn btn-outline btn-sm" onClick={sendCode} disabled={count > 0}>
+                    {count > 0 ? `${count}s 后重发` : "获取验证码"}
+                  </button>
+                </div>
               </div>
-            </div>
+              <div className={`demo-code${sent ? "" : " idle"}`} role="status" aria-live="polite">
+                {sent ? (
+                  <>
+                    <span>
+                      演示验证码 <b>{sent}</b> · 已自动填入，无需等手机短信
+                    </span>
+                    <button type="button" className="btn btn-outline btn-sm" onClick={() => setCode(sent)}>
+                      填入
+                    </button>
+                  </>
+                ) : (
+                  <span>演示环境不会真的发短信：点「获取验证码」后，6 位验证码会直接显示在这里。</span>
+                )}
+              </div>
+            </>
           ) : (
             <div className="field">
               <label htmlFor="pwd">密码</label>
@@ -283,8 +308,11 @@ export function LoginModal({ mode, onClose }) {
             {busy ? "正在进入…" : "登录 / 注册"}
           </button>
         </div>
+        <button type="button" className="btn btn-ghost btn-block btn-sm" style={{ marginTop: 12 }} onClick={demoLogin}>
+          演示环境一键登录（免验证码）
+        </button>
         <div className="demo-hint">
-          <b>演示说明：</b> 本前端为开源演示版，数据仅保存在浏览器本地。输入任意 11 位手机号，点击「获取验证码」后按提示中的 6 位验证码即可登录。
+          <b>演示说明：</b> 本前端为开源演示版，数据仅保存在浏览器本地，<b>不会真的发送短信</b>。输入任意 11 位手机号，点「获取验证码」后，6 位验证码会直接显示在窗口内并自动填入，再点「登录 / 注册」即可。
         </div>
         <div className="form-foot">
           <span style={{ color: "var(--ink-400)", fontWeight: 600 }}>登录即代表同意用户协议</span>
