@@ -57,6 +57,14 @@ try {
             $sql .= ' ORDER BY id DESC LIMIT 300';
             $stmt = db()->prepare($sql);
             $stmt->execute($params);
+            $tokStmt = db()->prepare(
+                "SELECT user_id, COALESCE(SUM(tokens),0) AS t FROM usage_log WHERE created_at >= DATE_FORMAT(NOW(), '%Y-%m-01') GROUP BY user_id"
+            );
+            $tokStmt->execute();
+            $tokMap = [];
+            foreach ($tokStmt->fetchAll() as $tr) {
+                $tokMap[(int) $tr['user_id']] = (int) $tr['t'];
+            }
             $rows = array_map(static function (array $u): array {
                 return [
                     'id' => (int) $u['id'],
@@ -69,6 +77,7 @@ try {
                     'note' => $u['note'],
                     'createdAt' => $u['created_at'],
                     'lastLogin' => $u['last_login'],
+                    'tokensThisMonth' => $tokMap[(int) $u['id']] ?? 0,
                 ];
             }, $stmt->fetchAll());
             out(['ok' => true, 'users' => $rows]);

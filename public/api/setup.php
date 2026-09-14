@@ -96,6 +96,22 @@ foreach ($columns as $col => $definition) {
     }
 }
 
+/* usage_log 增加 kind / tokens（用于改稿护栏与 token 统计） */
+$usageCols = [
+    'kind' => "VARCHAR(16) NOT NULL DEFAULT 'full'",
+    'tokens' => 'INT NOT NULL DEFAULT 0',
+];
+foreach ($usageCols as $col => $definition) {
+    $check = db()->prepare(
+        'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+    );
+    $check->execute([DB_NAME, 'usage_log', $col]);
+    if ((int) $check->fetchColumn() === 0) {
+        db()->exec("ALTER TABLE usage_log ADD COLUMN {$col} {$definition}");
+        $migrated[] = 'usage_log.' . $col;
+    }
+}
+
 out([
     'ok' => true,
     'created' => $done,
