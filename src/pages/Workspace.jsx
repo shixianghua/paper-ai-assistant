@@ -31,6 +31,7 @@ import {
 import { docWordCount, uid } from "../lib/generator"
 import { smartFullDoc, smartOutline } from "../lib/engine"
 import { PayModal } from "../components/Blocks"
+import { buildDocxBlob } from "../lib/docx"
 import { PRICING } from "../data/catalog"
 import { EFFORT_OPTIONS, MODEL_OPTIONS, getDsBase, getDsEffort, getDsKey, getDsModel, listModels, modelLabel, saveDsConfig, testDsConnection } from "../lib/deepseek"
 import {
@@ -178,9 +179,9 @@ async function buildPaperHtml(doc, fmtKey) {
 }
 
 async function exportWord(doc, fmtKey) {
-  const { html, images } = await buildPaperHtml(doc, fmtKey)
-  const blob = new Blob([packWordMhtml(html, images)], { type: "application/msword" })
-  downloadBlob(blob, `${doc.title.replace(/[\\/:*?"<>|]/g, "_")}.doc`)
+  const { images } = await buildPaperHtml(doc, fmtKey)
+  const blob = await buildDocxBlob(doc, fmtKey, images)
+  downloadBlob(blob, `${doc.title.replace(/[\\/:*?"<>|]/g, "_")}.docx`)
 }
 
 function downloadBlob(blob, filename) {
