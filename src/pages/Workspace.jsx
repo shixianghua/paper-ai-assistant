@@ -30,6 +30,8 @@ import {
 } from "../data/catalog"
 import { docWordCount, uid } from "../lib/generator"
 import { smartFullDoc, smartOutline } from "../lib/engine"
+import { PayModal } from "../components/Blocks"
+import { PRICING } from "../data/catalog"
 import { EFFORT_OPTIONS, MODEL_OPTIONS, getDsBase, getDsEffort, getDsKey, getDsModel, listModels, modelLabel, saveDsConfig, testDsConnection } from "../lib/deepseek"
 import {
   PAPER_FORMATS,
@@ -334,6 +336,7 @@ export default function Workspace() {
   const [dsModelList, setDsModelList] = useState([])
   const [dsListing, setDsListing] = useState(false)
   const [paperFormat, setPaperFormat] = useState(getPaperFormat())
+  const [payPlan, setPayPlan] = useState(null)
   const timers = useRef([])
   const cancelRef = useRef(null)
 
@@ -382,9 +385,22 @@ export default function Workspace() {
       notify("请先生成并确认大纲", "err")
       return
     }
+    // ===== 门槛：必须注册登录 + 必须有可用套餐（未购买不能生成） =====
+    if (!user) {
+      notify("请先注册 / 登录后再生成论文（登录后才能绑定套餐次数）", "err", 6000)
+      setLogin(true)
+      return
+    }
     const left = quotaLeft()
-    if (left !== null && left <= 0) {
-      notify("套餐次数已用完：请在首页「价格」区购买套餐，核销后额度立即到账", "err", 7000)
+    if (left === null || left <= 0) {
+      notify(
+        left === null
+          ? "未检测到有效套餐：请先购买套餐后再生成论文"
+          : "套餐次数已用完：请购买套餐后继续生成（付款后自动到账）",
+        "err",
+        7000,
+      )
+      setPayPlan(PRICING[0])
       return
     }
     cancelRef.current = false
@@ -1045,6 +1061,7 @@ export default function Workspace() {
         </div>
       </div>
       {login && <LoginModal mode="login" onClose={() => setLogin(false)} />}
+      {payPlan && <PayModal plan={payPlan} onClose={() => setPayPlan(null)} />}
       {showDs && (
         <div className="overlay" role="dialog" aria-modal="true" onClick={() => setShowDs(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>

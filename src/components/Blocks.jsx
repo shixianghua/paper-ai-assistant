@@ -387,7 +387,7 @@ async function copyText(text) {
   }
 }
 
-function PayModal({ plan, onClose }) {
+export function PayModal({ plan, onClose }) {
   const { user, backend, token } = useStore()
   const [orderNo, setOrderNo] = useState(makeOrderNo)
   const [auto, setAuto] = useState(false)
