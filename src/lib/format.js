@@ -251,7 +251,8 @@ function baseCss(fmtKey) {
 // Word（含较老版本与 WPS）对 HTML 里的 data:image 内嵌图片支持很差，
 // 会显示成替代文字。这里改为 Word 原生支持的“单文件网页”格式（MHTML）：
 // 正文 HTML 与每张 PNG 各自作为一个 MIME 部件，通过 Content-Location 引用。
-const PB = '<p class="pb" style="page-break-before:always">&#160;</p>'
+// Word/WPS 都认的分页写法（Word 自身导出的 HTML 就是用这个形式）
+const PB = '<p class="pb"><br clear="all" style="mso-special-character:line-break;page-break-before:always"></p>'
 
 function utf8ToBase64(str) {
   const bytes = new TextEncoder().encode(String(str ?? ""))
@@ -420,8 +421,9 @@ export function buildPaperHtml(doc, fmtKey = "ynou-bachelor") {
   const body = chapters
     .map((s, i) => {
       const brk = ouc || i > 0 ? ` style="page-break-before:always"` : ""
+      const brkBr = ouc || i > 0 ? `<br clear="all" style="mso-special-character:line-break;page-break-before:always">` : ""
       return (
-        `<p class="h1"${brk}><a name="_TocCh${i + 1}"></a>${esc(chapterLabel(i, s.title, fmt))}</p>` +
+        `${brkBr}<p class="h1"><a name="_TocCh${i + 1}"></a>${esc(chapterLabel(i, s.title, fmt))}</p>` +
         renderBlocks(s.blocks, noteMapOf(s.blocks), i + 1)
       )
     })
