@@ -692,7 +692,33 @@ export function StatementSection() {
         </Reveal>
         <Reveal delay={120}>
           <div className="statement-wrap">
-            <img className="statement-img" src="./statement.png" alt="学术诚信与使用声明：生成内容为参考稿件，不可直接提交为毕业论文、学位论文或期刊论文" />
+            <div className="statement-side">
+              <div className="statement-card">
+                <h4>一、学术诚信声明</h4>
+                <p>
+                  本平台是 AI 学术写作辅助工具，仅提供选题梳理、结构参考与语言润色服务。使用者应遵守所在院校的学术规范，独立完成论文的研究、写作与数据核实，不得将本平台用于代写、抄袭、买卖论文等学术不端行为。
+                </p>
+              </div>
+              <div className="statement-card warn">
+                <h4>二、使用须知（重要）</h4>
+                <p>
+                  平台生成的内容属于「参考稿件」，仅可用于学习、对比与写作辅助：<br />· 不可直接提交为本人的毕业论文、学位论文或期刊论文；<br />· 提交前须自行核实全部事实、数据与参考文献，并按学校要求修改结构、格式与字数；<br />· 生成内容可能存在偏差或错误，请以权威文献与指导教师意见为准。
+                </p>
+              </div>
+              <div className="statement-card">
+                <h4>三、免责声明</h4>
+                <p>
+                  本平台不对生成内容的原创性、准确性、完整性及是否满足特定院校或期刊要求作任何保证。因使用者未按规范使用（包括但不限于直接提交生成内容、篡改数据、伪造文献）所产生的一切后果，由使用者自行承担，本平台不承担连带责任。
+                </p>
+              </div>
+              <div className="statement-card cs">
+                <h4>客服支持</h4>
+                <p>
+                  添加微信：<b className="cs-id">sgeedu6800</b>
+                  <span className="cs-note">（工作日 9:00–21:00）</span>
+                </p>
+              </div>
+            </div>
           </div>
         </Reveal>
       </div>
