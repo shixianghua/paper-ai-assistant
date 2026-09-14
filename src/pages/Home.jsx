@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import GeneratorPanel from "../components/GeneratorPanel"
 import {
   CtaBand,
@@ -15,6 +15,11 @@ import { Footer, LoginModal, Navbar, Reveal, ToastHost } from "../components/Chr
 
 export default function Home() {
   const [login, setLogin] = useState(null) // null | "login" | "register"
+  useEffect(() => {
+    const open = () => setLogin("login")
+    window.addEventListener("sg:open-login", open)
+    return () => window.removeEventListener("sg:open-login", open)
+  }, [])
   return (
     <>
         <Navbar onLogin={(mode) => setLogin(mode || "login")} />

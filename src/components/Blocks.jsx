@@ -407,7 +407,7 @@ export function PayModal({ plan, onClose }) {
   // 登录后自动创建支付订单：若配置了自动支付通道，则走「扫码 → 自动到账」
   useEffect(() => {
     if (!backend || !token) {
-      setMode("manual")
+      setMode("needLogin")
       return
     }
     let alive = true
@@ -508,7 +508,7 @@ export function PayModal({ plan, onClose }) {
             <span className="dot" /> 正在创建支付订单…
           </div>
         )}
-        {mode === "manual" && <img className="pay-qr" src="./alipay-qr.png" alt="支付宝收款码" />}
+
         {mode === "auto" && qr && <img className="pay-qr" src={qr} alt="支付二维码" />}
         {mode === "error" && (
           <>
@@ -547,6 +547,11 @@ export function PayModal({ plan, onClose }) {
             </button>
           </>
         )}
+        {mode === "needLogin" && (
+          <div className="pay-wait" style={{ margin: "18px 0" }}>
+            <span className="dot" /> 请先登录后购买：登录后扫码支付，系统自动核对并立即到账
+          </div>
+        )}
         {mode === "auto" ? (
           <>
             <ol className="pay-steps">
@@ -566,25 +571,6 @@ export function PayModal({ plan, onClose }) {
               <div className="pay-wait">
                 <span className="dot" /> 等待支付中… 支付成功后篇数会自动到账（无需联系管理员）
               </div>
-            )}
-          </>
-        ) : mode === "manual" ? (
-          <>
-            <ol className="pay-steps">
-              <li>打开支付宝扫一扫，扫描上方收款码</li>
-              <li>
-                支付 <b>¥{plan.price}</b>，可备注订单号 <b>{orderNo}</b>
-              </li>
-              <li>支付后点下方按钮，把「支付截图 + 订单号」发给管理员核对开通</li>
-            </ol>
-            {paid ? (
-              <div className="pay-done">
-                ✓ 订单已登记。请把支付截图与订单号发给管理员，核对后立即为你开通（通常几分钟内）。
-              </div>
-            ) : (
-              <button className="btn btn-primary btn-block btn-lg" onClick={finish}>
-                我已完成支付
-              </button>
             )}
           </>
         ) : null}
@@ -608,15 +594,11 @@ export function PayModal({ plan, onClose }) {
         >
           复制订单信息
         </button>
-        {mode === "auto" ? (
+        {mode === "auto" && (
           <div className="demo-hint">
-            <b>支付说明：</b> 扫码后由支付宝实时收款，支付成功后<b>系统自动核对并立即发放篇数</b>，无需联系管理员；请勿对同一订单重复支付。
+            <b>支付说明：</b> 扫码后由支付宝实时收款，支付成功后<b>系统自动核对并立即发放篇数</b>，无需人工审核；同一订单号请勿重复支付。
           </div>
-        ) : mode === "manual" ? (
-          <div className="demo-hint">
-            <b>支付说明：</b> 当前为人工核销通道：支付完成后请把<b>支付截图 + 订单号</b>发给管理员，核对无误后开通对应套餐；同一订单号请勿重复支付。
-          </div>
-        ) : null}
+        )}
       </div>
     </div>
   )
@@ -624,7 +606,13 @@ export function PayModal({ plan, onClose }) {
 
 export function Pricing() {
   const [pay, setPay] = useState(null)
+  const { user } = useStore()
   const choose = (p) => {
+    if (!user) {
+      notify("请先注册 / 登录后再购买：登录后扫码付款会自动到账，无需人工审核", "info", 6000)
+      window.dispatchEvent(new CustomEvent("sg:open-login"))
+      return
+    }
     setPay(p)
   }
   return (
